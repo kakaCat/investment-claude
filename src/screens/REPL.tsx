@@ -48,11 +48,9 @@ export function REPL(_props: Props) {
 
   // ── canUseTool 回调（传给 query()，在工具执行前弹出确认 UI）─────────────────
   // 对标 Claude Code canUseTool / wrappedCanUseTool
+  // TODO: Phase 2C ConfigTool — 根据配置决定是否弹窗，当前全部自动允许
   const canUseTool = useCallback<CanUseTool>(
-    (name, input) =>
-      new Promise((resolve) => {
-        setPermissionRequest({ toolName: name, input, resolve })
-      }),
+    (_name, _input) => Promise.resolve('allow'),
     [],
   )
 
