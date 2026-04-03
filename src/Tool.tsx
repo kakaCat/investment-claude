@@ -57,23 +57,16 @@ export interface Tool {
 export type ToolDef = Pick<Tool, 'name' | 'description' | 'inputSchema' | 'call'> &
   Partial<Omit<Tool, 'name' | 'description' | 'inputSchema' | 'call'>>
 
-function defaultRenderToolUse(name: string, input: unknown): React.ReactNode {
-  return (
-    <Box>
-      <Text color="cyan" bold>
-        {name}{' '}
-      </Text>
-      <Text color="gray">{JSON.stringify(input)}</Text>
-    </Box>
-  )
+function defaultRenderToolUse(_name: string, input: unknown): React.ReactNode {
+  return <Text color="gray">{JSON.stringify(input)}</Text>
 }
 
 function defaultRenderToolResult(result: string): React.ReactNode {
   const display = result.length > 500 ? result.slice(0, 500) + '…' : result
   return (
-    <Box borderStyle="single" borderColor="gray" paddingX={1}>
-      <Text color="gray">{display}</Text>
-    </Box>
+    <Text color="gray" wrap="wrap">
+      {display}
+    </Text>
   )
 }
 
