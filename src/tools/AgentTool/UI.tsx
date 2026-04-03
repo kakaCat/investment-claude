@@ -21,9 +21,5 @@ export function AgentToolUseUI({
 export function AgentToolResultUI({ result }: { result: string }) {
   const isError = result.startsWith('ERROR:')
   const display = result.length > 500 ? result.slice(0, 500) + '…' : result
-  return (
-    <Box borderStyle="single" borderColor={isError ? 'red' : 'gray'} paddingX={1}>
-      <Text color={isError ? 'red' : 'gray'}>{display}</Text>
-    </Box>
-  )
+  return <Text color={isError ? 'red' : 'gray'} wrap="wrap">{display}</Text>
 }
