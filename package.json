@@ -1,0 +1,24 @@
+{
+  "name": "pi",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "pi": "./dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx src/entrypoints/cli.tsx",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.40.0",
+    "ink": "^5.0.1",
+    "react": "^18.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
