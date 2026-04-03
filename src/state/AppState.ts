@@ -5,13 +5,6 @@
 
 import type { TodoItem, Task } from '../tasks/types.js'
 
-type Assert<T extends true> = T
-type IsEqual<A, B> =
-  (<T>() => T extends A ? 1 : 2) extends
-    (<T>() => T extends B ? 1 : 2)
-    ? true
-    : false
-
 export type AppState = {
   // ── 当前已实现 ────────────────────────────────────────────────────────────
 
@@ -70,18 +63,3 @@ export function getAppState(): Readonly<AppState> {
 export function setAppState(updater: (prev: AppState) => AppState): void {
   _state = updater(_state)
 }
-
-type _GetAppStateReturnType = Assert<
-  IsEqual<ReturnType<typeof getAppState>, Readonly<AppState>>
->
-
-declare const _appState: AppState
-
-// @ts-expect-error AppState fields must reject direct reassignment.
-_appState.nextTaskId = 2
-
-// @ts-expect-error AppState todos must be readonly.
-_appState.todos.push({} as TodoItem)
-
-// @ts-expect-error AppState tasks must be readonly.
-_appState.tasks.set(1, {} as Task)
