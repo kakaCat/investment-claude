@@ -1,17 +1,37 @@
-// 核心主循环 — 对标 Claude Code src/query.ts
+// 核心主循环 — 对标 Claude Code src/query.ts + QueryEngine.ts
 // 纯 async generator，与 React 无关
-// 职责：调 Claude API → 流式接收 → 执行工具 → yield StreamEvent
+// 职责：调 API → 流式接收 → 权限检查 → 执行工具 → yield StreamEvent
 
 import Anthropic from '@anthropic-ai/sdk'
-import type { Tool } from './Tool.js'
+import type { Tool, ToolUseContext } from './Tool.js'
 import type { Message, StreamEvent, UserMessage, AssistantMessage } from './types/message.js'
-import { createToolResultMessage } from './utils/messages.js'
 import { findTool } from './tools/index.js'
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  baseURL: process.env.PI_BASE_URL,
-})
+// ── 类型 ──────────────────────────────────────────────────────────────────────
+
+/** 工具权限检查函数（对标 Claude Code canUseTool）*/
+export type CanUseTool = (
+  name: string,
+  input: unknown,
+) => Promise<'allow' | 'deny'>
+
+export type QueryParams = {
+  messages: Message[]
+  /** 激活工具（传给 API，isEnabled() && !deferLoading） */
+  tools: Tool[]
+  /** 全部工具（传给 ToolUseContext，供 ToolSearchTool 访问） */
+  allTools?: Tool[]
+  systemPrompt: string
+  model?: string
+  /** 最大工具调用轮数（对标 Claude Code maxTurns）*/
+  maxTurns?: number
+  /** 中止信号（对标 Claude Code abortController）*/
+  abortSignal?: AbortSignal
+  /** 工具权限检查（未提供时默认全部允许）*/
+  canUseTool?: CanUseTool
+}
+
+// ── 内部辅助 ──────────────────────────────────────────────────────────────────
 
 /** 将 Pi 的 Tool 格式转换为 Anthropic SDK 格式 */
 function toSDKTool(tool: Tool): Anthropic.Tool {
@@ -30,15 +50,153 @@ function toSDKMessages(messages: Message[]): Anthropic.MessageParam[] {
   }))
 }
 
-export type QueryParams = {
-  messages: Message[]
-  tools: Tool[]
-  systemPrompt: string
-  model?: string
-}
+// ── 单轮流式调用（对标 Claude Code claude.ts 中的 API 流）─────────────────────
 
 /**
- * 核心主循环：调用 Claude API，流式 yield 事件
+ * 对 API 发起一轮流式请求，累积 assistantContent 并 yield 文本 delta。
+ * 不做工具执行 — 那是 executeTools 的事。
+ */
+async function* streamOneTurn(
+  client: Anthropic,
+  params: {
+    model: string
+    systemPrompt: string
+    messages: Message[]
+    tools: Tool[]
+    abortSignal?: AbortSignal
+  },
+): AsyncGenerator<StreamEvent, AssistantMessage['content']> {
+  const assistantContent: AssistantMessage['content'] = []
+
+  const stream = client.messages.stream(
+    {
+      model: params.model,
+      max_tokens: 8192,
+      system: params.systemPrompt,
+      messages: toSDKMessages(params.messages),
+      tools: params.tools.map(toSDKTool),
+    },
+    { signal: params.abortSignal },
+  )
+
+  for await (const chunk of stream) {
+    // 中止检查
+    if (params.abortSignal?.aborted) {
+      return assistantContent
+    }
+
+    if (chunk.type === 'content_block_start') {
+      if (chunk.content_block.type === 'tool_use') {
+        // tool_use 的 input 会在后续 delta 中陆续到达，这里先占一个壳。
+        assistantContent.push({
+          type: 'tool_use',
+          id: chunk.content_block.id,
+          name: chunk.content_block.name,
+          input: {},
+        })
+      }
+    } else if (chunk.type === 'content_block_delta') {
+      if (chunk.delta.type === 'text_delta') {
+        const delta = chunk.delta.text
+        const last = assistantContent[assistantContent.length - 1]
+        if (last?.type === 'text') {
+          last.text += delta
+        } else {
+          assistantContent.push({ type: 'text', text: delta })
+        }
+        yield { type: 'text_delta', delta }
+      } else if (chunk.delta.type === 'input_json_delta') {
+        // 累积 tool input JSON（流式传输）
+        const last = assistantContent[assistantContent.length - 1]
+        if (last?.type === 'tool_use') {
+          const existing = (last as any)._inputJson ?? ''
+          ;(last as any)._inputJson = existing + chunk.delta.partial_json
+        }
+      }
+    } else if (chunk.type === 'message_stop') {
+      // 解析所有 tool_use 的完整 input
+      for (const c of assistantContent) {
+        if (c.type === 'tool_use') {
+          const raw = (c as any)._inputJson ?? '{}'
+          try {
+            // SDK 把工具参数按 JSON 碎片流出来，结束时再一次性还原成对象。
+            c.input = JSON.parse(raw)
+          } catch {
+            // 解析失败时回退为空对象，避免整个 query 循环因为坏 JSON 中断。
+            c.input = {}
+          }
+          delete (c as any)._inputJson
+        }
+      }
+    }
+  }
+
+  return assistantContent
+}
+
+// ── 工具执行（对标 Claude Code runTools）─────────────────────────────────────
+
+/**
+ * 执行单轮的所有工具调用，yield tool_use / tool_result / tool_denied 事件。
+ * 返回 toolResults 列表用于追加到历史。
+ */
+async function* executeTools(
+  toolUses: AssistantMessage['content'],
+  tools: Tool[],
+  canUseTool: CanUseTool,
+  context: ToolUseContext,
+): AsyncGenerator<StreamEvent, UserMessage['content']> {
+  const toolResults: UserMessage['content'] = []
+
+  for (const c of toolUses) {
+    if (c.type !== 'tool_use') continue
+
+    // 权限检查（对标 Claude Code canUseTool）
+    const permission = await canUseTool(c.name, c.input)
+    if (permission === 'deny') {
+      yield { type: 'tool_denied', tool_use_id: c.id, name: c.name }
+      toolResults.push({
+        type: 'tool_result',
+        tool_use_id: c.id,
+        // 仍然补一条 tool_result，保证模型下一轮能看到“工具未执行”的结果。
+        content: 'Tool use was denied by the user.',
+      })
+      continue
+    }
+
+    // 先把 tool_use 事件抛给上层 UI，再真正执行工具，便于界面即时展示。
+    yield { type: 'tool_use', id: c.id, name: c.name, input: c.input }
+
+    const tool = findTool(c.name, tools)
+    let result: string
+    if (!tool) {
+      result = `Error: tool "${c.name}" not found`
+    } else {
+      try {
+        result = await tool.call(c.input, context)
+      } catch (err) {
+        result = `Error: ${err instanceof Error ? err.message : String(err)}`
+      }
+    }
+
+    toolResults.push({ type: 'tool_result', tool_use_id: c.id, content: result })
+    yield { type: 'tool_result', tool_use_id: c.id, content: result }
+  }
+
+  return toolResults
+}
+
+// ── 默认 canUseTool（空方法占位，后续由 REPL 注入实际实现）────────────────────
+
+/** 默认全部允许（REPL 会传入实际的 canUseTool 弹窗逻辑） */
+async function defaultCanUseTool(_name: string, _input: unknown): Promise<'allow' | 'deny'> {
+  return 'allow'
+}
+
+// ── 主循环（对标 Claude Code queryLoop）──────────────────────────────────────
+
+/**
+ * 核心主循环：调用 API，流式 yield 事件，支持多轮工具调用
  *
  * 使用方式（在 REPL.tsx 中）：
  *   for await (const event of query(params)) {
@@ -48,111 +206,80 @@ export type QueryParams = {
  *   }
  */
 export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
-  const { messages, tools, systemPrompt, model = process.env.PI_MODEL ?? 'deepseek-chat' } = params
+  const {
+    messages,
+    tools,
+    allTools,
+    systemPrompt,
+    model = process.env.PI_MODEL ?? 'deepseek-chat',
+    maxTurns = 10,
+    abortSignal,
+    canUseTool = defaultCanUseTool,
+  } = params
 
+  // ToolUseContext 在整个 query 生命周期内复用
+  const toolUseContext: ToolUseContext = {
+    abortSignal: abortSignal ?? new AbortController().signal,
+    cwd: process.cwd(),
+    tools: allTools ?? tools,  // ToolSearchTool 能看到所有工具，包括 deferLoading 的
+  }
+
+  const client = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    baseURL: process.env.PI_BASE_URL,
+  })
+
+  // currentMessages 会在每一轮后持续扩展，形成“assistant -> tool_result -> assistant”的链路。
   let currentMessages = [...messages]
+  let turnCount = 0
 
-  // 循环：支持多轮工具调用（tool_use → tool_result → 继续对话）
+  // ── 主循环 ────────────────────────────────────────────────────────────────
   while (true) {
-    const assistantContent: AssistantMessage['content'] = []
-    let hasToolUse = false
+    // 中止检查
+    if (abortSignal?.aborted) {
+      return
+    }
 
+    // maxTurns 检查（对标 Claude Code max_turns_reached）
+    if (turnCount >= maxTurns) {
+      yield { type: 'max_turns_reached', turnCount }
+      return
+    }
+
+    // 每轮 API 调用开始前通知（对标 Claude Code stream_request_start）
+    yield { type: 'stream_request_start' }
+    turnCount++
+
+    // ── 单轮流式调用 ────────────────────────────────────────────────────────
+    let assistantContent: AssistantMessage['content']
     try {
-      // 流式调用 Claude API
-      const stream = await client.messages.stream({
+      assistantContent = yield* streamOneTurn(client, {
         model,
-        max_tokens: 8192,
-        system: systemPrompt,
-        messages: toSDKMessages(currentMessages),
-        tools: tools.map(toSDKTool),
+        systemPrompt,
+        messages: currentMessages,
+        tools,
+        abortSignal,
       })
-
-      // 处理流式事件
-      for await (const chunk of stream) {
-        if (chunk.type === 'content_block_delta') {
-          if (chunk.delta.type === 'text_delta') {
-            const delta = chunk.delta.text
-            // 追加到当前 assistant 消息的文本内容
-            const lastContent = assistantContent[assistantContent.length - 1]
-            if (lastContent && lastContent.type === 'text') {
-              lastContent.text += delta
-            } else {
-              assistantContent.push({ type: 'text', text: delta })
-            }
-            yield { type: 'text_delta', delta }
-          } else if (chunk.delta.type === 'input_json_delta') {
-            // 累积 tool input JSON（流式传输）
-            const lastContent = assistantContent[assistantContent.length - 1]
-            if (lastContent && lastContent.type === 'tool_use') {
-              // 将增量 JSON 字符串累积到临时字段
-              const existing = (lastContent as any)._inputJson ?? ''
-              ;(lastContent as any)._inputJson = existing + chunk.delta.partial_json
-            }
-          }
-        } else if (chunk.type === 'content_block_start') {
-          if (chunk.content_block.type === 'tool_use') {
-            assistantContent.push({
-              type: 'tool_use',
-              id: chunk.content_block.id,
-              name: chunk.content_block.name,
-              input: {},
-            })
-            hasToolUse = true
-          }
-        } else if (chunk.type === 'message_stop') {
-          // 解析所有 tool_use 的完整 input
-          for (const c of assistantContent) {
-            if (c.type === 'tool_use') {
-              const raw = (c as any)._inputJson ?? '{}'
-              try {
-                c.input = JSON.parse(raw)
-              } catch {
-                c.input = {}
-              }
-              delete (c as any)._inputJson
-            }
-          }
-        }
-      }
     } catch (err) {
       yield { type: 'error', error: err instanceof Error ? err : new Error(String(err)) }
       return
     }
 
     // 将 assistant 消息追加到历史
-    const assistantMsg: AssistantMessage = { type: 'assistant', content: assistantContent }
-    currentMessages.push(assistantMsg)
+    currentMessages.push({ type: 'assistant', content: assistantContent })
 
-    // 如果没有工具调用，对话结束
-    if (!hasToolUse) {
+    // ── 检查是否有工具调用 ──────────────────────────────────────────────────
+    const toolUses = assistantContent.filter((c) => c.type === 'tool_use')
+    if (toolUses.length === 0) {
+      // 无工具调用 → 对话结束
       yield { type: 'done' }
       return
     }
 
-    // 执行所有工具调用
-    const toolResults: UserMessage['content'] = []
-    for (const c of assistantContent) {
-      if (c.type === 'tool_use') {
-        yield { type: 'tool_use', id: c.id, name: c.name, input: c.input }
+    // ── 执行工具（含权限检查）──────────────────────────────────────────────
+    const toolResults = yield* executeTools(assistantContent, tools, canUseTool, toolUseContext)
 
-        const tool = findTool(c.name, tools)
-        let result: string
-        if (!tool) {
-          result = `Error: tool "${c.name}" not found`
-        } else {
-          try {
-            result = await tool.call(c.input)
-          } catch (err) {
-            result = `Error: ${err instanceof Error ? err.message : String(err)}`
-          }
-        }
-
-        toolResults.push({ type: 'tool_result', tool_use_id: c.id, content: result })
-        yield { type: 'tool_result', tool_use_id: c.id, content: result }
-      }
-    }
-
-    // 将 tool_result 追加到历史，继续下一轮
+    // tool_result 作为 user 消息回灌给模型，这是 Anthropic 工具调用协议要求的格式。
     currentMessages.push({ type: 'user', content: toolResults })
   }
 }
