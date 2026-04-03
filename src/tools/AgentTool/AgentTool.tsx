@@ -37,7 +37,6 @@ export const AgentTool = buildTool({
     },
     required: ['description', 'prompt'],
   },
-  isReadOnly: () => false,
   renderToolUse: (input) => (
     <AgentToolUseUI input={input as { description: string; subagent_type?: string }} />
   ),

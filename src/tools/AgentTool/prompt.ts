@@ -4,9 +4,14 @@ export const SEARCH_HINT = 'spawn agent subagent delegate task worker'
 
 export const DESCRIPTION = `Launch a new agent to handle complex, multi-step tasks autonomously.
 
-Available agent types and the tools they have access to:
-- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.
-- Explore: Fast agent specialized for exploring codebases. Use for finding files by patterns, searching code for keywords, or answering questions about the codebase.
-- Plan: Software architect agent for designing implementation plans. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.
+The Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.
 
-When calling this agent, provide a clear, complete prompt with all context needed — the agent starts with no prior conversation history.`
+When NOT to use the Agent tool:
+- If you want to read a specific file path, use the Read tool or the Glob tool instead of the Agent tool, to find the match more quickly
+- If you are searching for a specific class definition like "class Foo", use the Glob tool instead, to find the match more quickly
+- If you are searching for code within a specific file or set of 2-3 files, use the Read tool instead of the Agent tool, to find the match more quickly
+- Other tasks that are not related to the agent descriptions above
+
+Usage notes:
+- Always include a short description (3-5 words) summarizing what the agent will do
+- If subagent_type is omitted or unknown, the tool returns a list of available agent types`
