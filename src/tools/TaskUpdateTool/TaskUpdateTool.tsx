@@ -36,21 +36,22 @@ export const TaskUpdateTool = buildTool({
     if (output !== undefined) updates.output = output
     if (description !== undefined) updates.description = description
 
-    let task: Task | undefined
+    let updatedTask: Task | undefined
     context.setAppState((prev) => {
-      const existingTask = prev.tasks.get(id)
-      if (!existingTask) return prev
-      task = {
-        ...existingTask,
+      const task = prev.tasks.get(id)
+      if (!task) return prev
+      const updated: Task = {
+        ...task,
         ...updates,
         updatedAt: new Date().toISOString(),
       }
+      updatedTask = updated
       return {
         ...prev,
-        tasks: new Map(prev.tasks).set(id, task),
+        tasks: new Map(prev.tasks).set(id, updated),
       }
     })
-    if (!task) return `ERROR: Task ${id} not found.`
-    return JSON.stringify(task)
+    if (!updatedTask) return `ERROR: Task ${id} not found.`
+    return JSON.stringify(updatedTask)
   },
 })

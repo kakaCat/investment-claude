@@ -32,7 +32,7 @@ export const TaskCreateTool = buildTool({
       activeForm?: string
       blockedBy?: number[]
     }
-    let createdTaskId: number | undefined
+    let createdTask: Task | undefined
     context.setAppState((prev) => {
       const now = new Date().toISOString()
       const task: Task = {
@@ -46,16 +46,14 @@ export const TaskCreateTool = buildTool({
         createdAt: now,
         updatedAt: now,
       }
-      createdTaskId = task.id
+      createdTask = task
       return {
         ...prev,
         nextTaskId: prev.nextTaskId + 1,
         tasks: new Map(prev.tasks).set(task.id, task),
       }
     })
-    const task = createdTaskId === undefined
-      ? undefined
-      : context.getAppState().tasks.get(createdTaskId)
-    return JSON.stringify(task)
+    if (!createdTask) return 'ERROR: Failed to create task.'
+    return JSON.stringify(createdTask)
   },
 })
