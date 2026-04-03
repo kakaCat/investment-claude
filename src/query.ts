@@ -8,7 +8,10 @@ import type { Message, StreamEvent, UserMessage, AssistantMessage } from './type
 import { createToolResultMessage } from './utils/messages.js'
 import { findTool } from './tools/index.js'
 
-const client = new Anthropic()
+const client = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  baseURL: process.env.PI_BASE_URL,
+})
 
 /** 将 Pi 的 Tool 格式转换为 Anthropic SDK 格式 */
 function toSDKTool(tool: Tool): Anthropic.Tool {
@@ -45,7 +48,7 @@ export type QueryParams = {
  *   }
  */
 export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
-  const { messages, tools, systemPrompt, model = 'claude-opus-4-5' } = params
+  const { messages, tools, systemPrompt, model = process.env.PI_MODEL ?? 'deepseek-chat' } = params
 
   let currentMessages = [...messages]
 
