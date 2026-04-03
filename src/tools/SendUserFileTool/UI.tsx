@@ -11,7 +11,7 @@ export function SendUserFileToolUseUI({ input }: { input: { path: string } }) {
 }
 
 export function SendUserFileToolResultUI({ result }: { result: string }) {
-  const isError = result.startsWith('Error')
+  const isError = result.startsWith('Error:')
   return (
     <Box>
       <Text color={isError ? 'red' : 'green'}>{result}</Text>

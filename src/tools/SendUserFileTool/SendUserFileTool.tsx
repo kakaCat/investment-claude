@@ -24,8 +24,10 @@ export const SendUserFileTool = buildTool({
     const absPath = resolve(context.cwd, path)
     try {
       await access(absPath)
-    } catch {
-      return `Error: file not found: ${absPath}`
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') return `Error: file not found: ${absPath}`
+      return `Error: cannot access file: ${absPath} (${code ?? String(err)})`
     }
     return absPath
   },
