@@ -3,8 +3,9 @@
 
 import React from 'react'
 import { Box, Text } from 'ink'
+import type { AppState } from './state/AppState.js'
 
-/** 工具执行上下文（对标 Claude Code ToolUseContext，简化版） */
+/** 工具执行上下文（对标 Claude Code ToolUseContext） */
 export type ToolUseContext = {
   abortSignal: AbortSignal
   cwd: string
@@ -12,9 +13,21 @@ export type ToolUseContext = {
   tools: Tool[]
   // Design note: agent definitions are NOT stored in ToolUseContext.
   // AgentTool loads them directly from disk + built-in registry.
-  // Rationale: context = execution environment; agent registry = AgentTool's concern.
-  // If multiple tools ever need agent access, follow Claude Code's pattern of
-  // a toolUseContext.options bag rather than polluting the core context fields.
+
+  // ── AppState 读写（对标 Claude Code getAppState / setAppState）────────────
+  /** 读取当前全局运行时状态快照 */
+  getAppState(): Readonly<AppState>
+  /**
+   * 以函数式方式更新全局运行时状态。
+   * updater 必须返回新对象（不可原地 mutate）。
+   *
+   * Claude Code 还有 setAppStateForTasks，专给后台任务用（子 agent 调用时
+   * 穿透到根 store）。当前 pi 只有主线程，暂不需要，留注释备用：
+   * // setAppStateForTasks?: (updater: (prev: AppState) => AppState) => void
+   */
+  setAppState(updater: (prev: AppState) => AppState): void
+
+  // ── 用户交互回调 ──────────────────────────────────────────────────────────
   /** 将工具问题交还给 REPL，等待用户选择后再继续 */
   askUser?: (
     question: string,
@@ -24,8 +37,32 @@ export type ToolUseContext = {
   enterPlanMode?: () => Promise<void>
   /** Present plan to user, wait for approval. Resolves 'approved', 'rejected', or a rejection reason string */
   exitPlanMode?: (plan: string) => Promise<string>
-  /** Present execution summary to user, wait for verification. Resolves 'verified', 'rejected', or a rejection reason string */
+  /** Present execution summary to user, wait for verification */
   verifyExecution?: (summary: string) => Promise<string>
+
+  // ── 以下字段对标 Claude Code，暂未实现 ─────────────────────────────────────
+
+  // messages?: Message[]
+  //   当前对话历史快照。Claude Code 的部分工具（如 TodoWrite reminder 逻辑）
+  //   需要扫描消息历史。当前 pi 的 reminder 逻辑在 query.ts 里完成，工具本身不需要读。
+  //   添加时机：工具自身需要读取对话历史时。
+
+  // agentId?: string
+  //   当前 agent ID。主线程为 undefined，子 agent 有值。
+  //   用途：子 agent 隔离各自的 AppState（Claude Code 按 agentId 分桶存 todos）。
+  //   添加时机：实现子 agent 独立 todo/task 列表时。
+
+  // setToolJSX?: (args: { jsx: React.ReactNode | null; ... } | null) => void
+  //   工具注入自定义 UI（覆盖默认的 renderToolResult）。
+  //   添加时机：需要工具动态注入持续展示的 UI 面板时（如 Tmux、WebBrowser）。
+
+  // appendSystemMessage?: (msg: SystemMessage) => void
+  //   向对话追加 UI-only 系统消息（不发给 API）。
+  //   添加时机：工具需要在对话流中插入提示性系统消息时。
+
+  // readFileState?: FileStateCache
+  //   LRU 缓存已读文件内容，避免重复读取。
+  //   添加时机：实现文件读取缓存 / post-compact 恢复时。
 }
 
 /** 工具接口 */
