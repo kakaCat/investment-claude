@@ -4,7 +4,7 @@ import { Box, Text } from 'ink'
 export function ToolSearchUseUI({
   input,
 }: {
-  input: { query: string; max_results?: number }
+  input: { query: string }
 }) {
   return (
     <Box>

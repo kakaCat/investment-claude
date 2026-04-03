@@ -45,60 +45,61 @@ function AssistantBubble({ text }: { text: string }) {
   )
 }
 
-function ToolUseBubble({
+/**
+ * Unified tool call block — matches Claude Code style.
+ * Tool name + dot indicator sit above a round-border box.
+ * Inside the box: IN section (tool input), optional separator + OUT section (result).
+ */
+function ToolCallBlock({
   name,
   input,
   tools,
+  result,
   status,
 }: {
   name: string
   input: unknown
   tools: Tool[]
+  result?: string
   status?: 'success' | 'error'
 }) {
   const dotColor = status === 'success' ? 'green' : status === 'error' ? 'red' : 'gray'
   const tool = findTool(name, tools)
-  return (
-    <Box marginBottom={0} paddingLeft={2} flexDirection="row" gap={1}>
-      <Text color={dotColor}>●</Text>
-      <Text bold>{name}</Text>
-      {tool ? (
-        tool.renderToolUse(input)
-      ) : (
-        <Text color="gray">{JSON.stringify(input)}</Text>
-      )}
-    </Box>
-  )
-}
+  const hasResult = result !== undefined
 
-function ToolResultBubble({
-  toolUseId,
-  content,
-  tools,
-  toolUseNames,
-}: {
-  toolUseId: string
-  content: string
-  tools: Tool[]
-  toolUseNames: Map<string, string>
-}) {
-  const toolName = toolUseNames.get(toolUseId)
-  const tool = toolName ? findTool(toolName, tools) : undefined
   return (
-    <Box
-      marginBottom={1}
-      paddingLeft={2}
-      borderStyle="round"
-      borderColor="gray"
-      width="100%"
-    >
-      <Box width="100%">
-        {tool ? (
-          tool.renderToolResult(content)
-        ) : (
-          <Text wrap="wrap" color="gray">
-            {content.length > 500 ? content.slice(0, 500) + '…' : content}
-          </Text>
+    <Box marginBottom={1} flexDirection="column">
+      {/* Tool name row — outside the box */}
+      <Box paddingLeft={2} flexDirection="row" gap={1}>
+        <Text color={dotColor}>●</Text>
+        <Text bold>{name}</Text>
+      </Box>
+
+      {/* Combined IN / OUT box */}
+      <Box paddingLeft={2} borderStyle="round" borderColor="gray" width="100%" flexDirection="column">
+        {/* IN section */}
+        <Box>
+          {tool ? (
+            tool.renderToolUse(input)
+          ) : (
+            <Text color="gray">{JSON.stringify(input)}</Text>
+          )}
+        </Box>
+
+        {/* OUT section — only when result is available */}
+        {hasResult && (
+          <>
+            <Text color="gray">{'─'.repeat(40)}</Text>
+            <Box>
+              {tool ? (
+                tool.renderToolResult(result)
+              ) : (
+                <Text wrap="wrap" color="gray">
+                  {result.length > 500 ? result.slice(0, 500) + '…' : result}
+                </Text>
+              )}
+            </Box>
+          </>
         )}
       </Box>
     </Box>
@@ -106,15 +107,14 @@ function ToolResultBubble({
 }
 
 export function Messages({ messages, streamingText, tools }: Props) {
-  // Build a lookup map: tool_use_id → tool name
-  // Needed so ToolResultBubble can find the right tool to render results
-  const toolUseNames = useMemo<Map<string, string>>(() => {
+  // Build a lookup map: tool_use_id → result content (from tool_result blocks)
+  const toolResults = useMemo<Map<string, string>>(() => {
     const map = new Map<string, string>()
     for (const msg of messages) {
-      if (msg.type === 'assistant') {
+      if (msg.type === 'user') {
         for (const c of msg.content) {
-          if (c.type === 'tool_use') {
-            map.set(c.id, c.name)
+          if (c.type === 'tool_result') {
+            map.set(c.tool_use_id, c.content)
           }
         }
       }
@@ -142,27 +142,10 @@ export function Messages({ messages, streamingText, tools }: Props) {
     <Box flexDirection="column">
       {messages.map((msg, i) => {
         if (msg.type === 'user') {
+          // Only render text content; tool_result blocks are absorbed into ToolCallBlock above
           const textContent = msg.content.find((c) => c.type === 'text')
-          const toolResults = msg.content.filter((c) => c.type === 'tool_result')
-
-          return (
-            <Box key={i} flexDirection="column">
-              {textContent && textContent.type === 'text' && (
-                <UserBubble text={textContent.text} />
-              )}
-              {toolResults.map((r, j) =>
-                r.type === 'tool_result' ? (
-                  <ToolResultBubble
-                    key={j}
-                    toolUseId={r.tool_use_id}
-                    content={r.content}
-                    tools={tools}
-                    toolUseNames={toolUseNames}
-                  />
-                ) : null,
-              )}
-            </Box>
-          )
+          if (!textContent || textContent.type !== 'text') return null
+          return <UserBubble key={i} text={textContent.text} />
         }
 
         if (msg.type === 'assistant') {
@@ -172,11 +155,12 @@ export function Messages({ messages, streamingText, tools }: Props) {
             <Box key={i} flexDirection="column">
               {text && <AssistantBubble text={text} />}
               {toolUses.map((t, j) => (
-                <ToolUseBubble
+                <ToolCallBlock
                   key={j}
                   name={t.name}
                   input={t.input}
                   tools={tools}
+                  result={toolResults.get(t.id)}
                   status={toolUseResultStatus.get(t.id)}
                 />
               ))}
