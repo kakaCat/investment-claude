@@ -1,11 +1,13 @@
 // 主屏幕 — 简化版，对标 Claude Code src/screens/REPL.tsx
 // 目标 ≤300 行。职责：驱动 query 循环，处理 StreamEvent，协调 UI
 
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
-import { query } from '../query.js'
+import { query, type CanUseTool } from '../query.js'
 import { getSystemPrompt } from '../constants/prompts.js'
 import { useMergedTools } from '../hooks/useMergedTools.js'
+import { getAllTools } from '../tools/index.js'
+import { getPluginTools } from '../plugins/index.js'
 import { useAssistantHistory } from '../hooks/useAssistantHistory.js'
 import { Messages } from '../components/Messages.js'
 import { PromptInput } from '../components/PromptInput.js'
@@ -22,19 +24,33 @@ type Props = {
 type PermissionRequest = {
   toolName: string
   input: unknown
-  resolve: (approved: boolean) => void
+  resolve: (decision: 'allow' | 'deny') => void
 }
 
 export function REPL(_props: Props) {
   const tools = useMergedTools()
+  const allTools = useMemo(() => getAllTools(getPluginTools()), [])
   const history = useAssistantHistory()
   const [isLoading, setIsLoading] = useState(false)
   const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null)
 
-  // 处理用户提交
+  // AbortController — 用于 Ctrl+C 中止当前 query（对标 Claude Code interrupt()）
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  // ── canUseTool 回调（传给 query()，在工具执行前弹出确认 UI）─────────────────
+  // 对标 Claude Code canUseTool / wrappedCanUseTool
+  const canUseTool = useCallback<CanUseTool>(
+    (name, input) =>
+      new Promise((resolve) => {
+        setPermissionRequest({ toolName: name, input, resolve })
+      }),
+    [],
+  )
+
+  // ── 处理用户提交 ──────────────────────────────────────────────────────────
   const handleSubmit = useCallback(
     async (input: string) => {
-      // 处理 slash commands
+      // ── slash commands ──────────────────────────────────────────────────
       if (input === '/clear') {
         history.clearMessages()
         return
@@ -42,7 +58,9 @@ export function REPL(_props: Props) {
       if (input === '/help') {
         history.appendUserMessage('/help')
         history.startAssistantMessage()
-        history.appendStreamingDelta('Available commands:\n  /help  — show this message\n  /clear — clear the conversation')
+        history.appendStreamingDelta(
+          'Available commands:\n  /help  — show this message\n  /clear — clear the conversation',
+        )
         history.finalizeAssistantMessage()
         return
       }
@@ -51,9 +69,12 @@ export function REPL(_props: Props) {
       setIsLoading(true)
       history.startAssistantMessage()
 
+      // 创建新的 AbortController（对标 Claude Code createAbortController）
+      const abortController = new AbortController()
+      abortControllerRef.current = abortController
+
       try {
-        // 获取当前全部消息（包含刚追加的 user message）
-        // 注意：React state 更新是异步的，需要手动构造完整 messages
+        // 注意：React state 异步，手动构造当前完整 messages
         const currentMessages = [
           ...history.messages,
           { type: 'user' as const, content: [{ type: 'text' as const, text: input }] },
@@ -62,76 +83,104 @@ export function REPL(_props: Props) {
         const gen = query({
           messages: currentMessages,
           tools,
+          allTools,
           systemPrompt: getSystemPrompt(),
+          canUseTool,
+          abortSignal: abortController.signal,
         })
 
         for await (const event of gen) {
           switch (event.type) {
-            case 'text_delta':
-              history.appendStreamingDelta(event.delta)
-              break
-
-            case 'tool_use': {
-              // 请求用户权限确认
-              const approved = await new Promise<boolean>((resolve) => {
-                setPermissionRequest({ toolName: event.name, input: event.input, resolve })
-              })
-              setPermissionRequest(null)
-              if (!approved) {
-                // 用户拒绝：中止整个 generator，跳出 for-await 循环
-                gen.return(undefined)
-                history.finalizeAssistantMessage()
-                return
-              }
-              break
-            }
-
-            case 'tool_result':
-              history.appendToolResult(event.tool_use_id, event.content)
+            // ── 生命周期 ────────────────────────────────────────────────
+            case 'stream_request_start':
+              // API 调用开始，UI 已在 isLoading 状态，无需额外操作
               break
 
             case 'done':
               history.finalizeAssistantMessage()
               break
 
+            case 'max_turns_reached':
+              history.finalizeAssistantMessage()
+              history.appendUserMessage(`[System: reached ${event.turnCount} turn limit]`)
+              break
+
             case 'error':
               history.finalizeAssistantMessage()
               console.error('Query error:', event.error)
+              break
+
+            // ── 流式文本 ────────────────────────────────────────────────
+            case 'text_delta':
+              history.appendStreamingDelta(event.delta)
+              break
+
+            // ── 工具调用 ────────────────────────────────────────────────
+            // tool_use 在 canUseTool 返回 allow 之后才 yield，此处只做 UI 展示
+            case 'tool_use':
+              // 工具正在执行（权限已通过），此处关闭 permission UI
+              setPermissionRequest(null)
+              break
+
+            case 'tool_result':
+              history.appendToolResult(event.tool_use_id, event.content)
+              break
+
+            case 'tool_denied':
+              // 用户拒绝，关闭 permission UI
+              setPermissionRequest(null)
               break
           }
         }
       } finally {
         setIsLoading(false)
+        abortControllerRef.current = null
       }
     },
-    [tools, history],
+    [tools, history, canUseTool],
   )
 
-  // 权限确认界面的键盘输入
+  // ── 键盘输入处理 ──────────────────────────────────────────────────────────
   useInput(
     (input, key) => {
-      if (!permissionRequest) return
-      if (input === 'y' || key.return) {
-        permissionRequest.resolve(true)
-      } else if (input === 'n' || key.escape) {
-        permissionRequest.resolve(false)
+      // 权限确认
+      if (permissionRequest) {
+        if (input === 'y' || key.return) {
+          permissionRequest.resolve('allow')
+        } else if (input === 'n' || key.escape) {
+          permissionRequest.resolve('deny')
+        }
+        return
+      }
+
+      // Ctrl+C 中止当前 query（对标 Claude Code interrupt()）
+      if (key.ctrl && input === 'c' && isLoading) {
+        abortControllerRef.current?.abort()
       }
     },
-    { isActive: !!permissionRequest },
+    { isActive: true },
   )
 
   return (
     <Box flexDirection="column" padding={1}>
       {/* 消息历史 */}
-      <Messages messages={history.messages} streamingText={history.streamingText} />
+      <Messages messages={history.messages} streamingText={history.streamingText} tools={tools} />
 
       {/* 工具权限确认 */}
       {permissionRequest && (
         <Box flexDirection="column" borderStyle="round" borderColor="yellow" padding={1}>
-          <Text color="yellow" bold>Allow tool use?</Text>
-          <Text>Tool: <Text color="cyan">{permissionRequest.toolName}</Text></Text>
-          <Text>Input: <Text color="gray">{JSON.stringify(permissionRequest.input)}</Text></Text>
-          <Text><Text color="green">y</Text> to allow, <Text color="red">n</Text> to deny</Text>
+          <Text color="yellow" bold>
+            Allow tool use?
+          </Text>
+          <Text>
+            Tool: <Text color="cyan">{permissionRequest.toolName}</Text>
+          </Text>
+          <Text>
+            Input: <Text color="gray">{JSON.stringify(permissionRequest.input)}</Text>
+          </Text>
+          <Text>
+            <Text color="green">y</Text> to allow, <Text color="red">n</Text> to deny
+          </Text>
         </Box>
       )}
 
