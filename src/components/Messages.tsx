@@ -15,6 +15,14 @@ type Props = {
   tools: Tool[]
 }
 
+export function isToolResultErrorContent(content: string): boolean {
+  return (
+    content.startsWith('Error') ||
+    content.startsWith('ERROR:') ||
+    /^Exit code \d+/.test(content)
+  )
+}
+
 function UserBubble({ text }: { text: string }) {
   return (
     <Box marginBottom={1}>
@@ -121,8 +129,7 @@ export function Messages({ messages, streamingText, tools }: Props) {
       if (msg.type === 'user') {
         for (const c of msg.content) {
           if (c.type === 'tool_result') {
-            const isError =
-              c.content.startsWith('Error') || c.content.startsWith('ERROR:')
+            const isError = isToolResultErrorContent(c.content)
             map.set(c.tool_use_id, isError ? 'error' : 'success')
           }
         }
