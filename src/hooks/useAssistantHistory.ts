@@ -1,15 +1,17 @@
 // 消息历史管理 hook — 对标 Claude Code src/hooks/useAssistantHistory.ts
 // 简化版：只管理内存中的消息列表，不涉及持久化
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import type { Message, AssistantMessage } from '../types/message.js'
 
 export type UseAssistantHistoryResult = {
   messages: Message[]
+  displayMessages: Message[]
   streamingText: string
   appendUserMessage: (text: string) => void
   startAssistantMessage: () => void
   appendStreamingDelta: (delta: string) => void
+  appendToolUse: (id: string, name: string, input: unknown) => void
   finalizeAssistantMessage: () => void
   appendToolResult: (tool_use_id: string, content: string) => void
   clearMessages: () => void
@@ -22,6 +24,11 @@ export function useAssistantHistory(): UseAssistantHistoryResult {
   const [pendingAssistantContent, setPendingAssistantContent] = useState<
     AssistantMessage['content']
   >([])
+
+  const displayMessages = useMemo<Message[]>(() => {
+    if (pendingAssistantContent.length === 0) return messages
+    return [...messages, { type: 'assistant', content: pendingAssistantContent }]
+  }, [messages, pendingAssistantContent])
 
   const appendUserMessage = useCallback((text: string) => {
     setMessages((prev) => [
@@ -44,6 +51,13 @@ export function useAssistantHistory(): UseAssistantHistoryResult {
       }
       return [...prev, { type: 'text', text: delta }]
     })
+  }, [])
+
+  const appendToolUse = useCallback((id: string, name: string, input: unknown) => {
+    setPendingAssistantContent((prev) => [
+      ...prev,
+      { type: 'tool_use', id, name, input },
+    ])
   }, [])
 
   const finalizeAssistantMessage = useCallback(() => {
@@ -80,10 +94,12 @@ export function useAssistantHistory(): UseAssistantHistoryResult {
 
   return {
     messages,
+    displayMessages,
     streamingText,
     appendUserMessage,
     startAssistantMessage,
     appendStreamingDelta,
+    appendToolUse,
     finalizeAssistantMessage,
     appendToolResult,
     clearMessages,

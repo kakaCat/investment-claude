@@ -1,7 +1,7 @@
 // 主屏幕 — 简化版，对标 Claude Code src/screens/REPL.tsx
 // 目标 ≤300 行。职责：驱动 query 循环，处理 StreamEvent，协调 UI
 
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { query, type CanUseTool } from '../query.js'
 import { getSystemPrompt } from '../constants/prompts.js'
@@ -15,6 +15,7 @@ import { Spinner } from '../components/Spinner.js'
 import type { SSHSession } from '../ssh/index.js'
 import type { SwarmConfig } from '../swarm/index.js'
 import type { ToolUseContext } from '../Tool.js'
+import { createCronScheduler } from '../cron/cronScheduler.js'
 
 type Props = {
   // Stub props — 接口预留，当前不使用
@@ -34,6 +35,18 @@ type AskUserRequest = {
   resolve: (answer: string) => void
 }
 
+type PlanApprovalRequest = {
+  plan: string
+  resolve: (result: string) => void
+}
+
+type VerifyRequest = {
+  summary: string
+  resolve: (result: string) => void
+}
+
+const WRITE_TOOLS = new Set(['write_file', 'edit_file', 'bash'])
+
 export function REPL(_props: Props) {
   const tools = useMergedTools()
   const allTools = useMemo(() => getAllTools(getPluginTools()), [])
@@ -42,15 +55,29 @@ export function REPL(_props: Props) {
   const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null)
   const [askUserRequest, setAskUserRequest] = useState<AskUserRequest | null>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [isPlanMode, setIsPlanMode] = useState(false)
+  const [planApprovalRequest, setPlanApprovalRequest] = useState<PlanApprovalRequest | null>(null)
+  const [collectingPlanReason, setCollectingPlanReason] = useState(false)
+  const [verifyRequest, setVerifyRequest] = useState<VerifyRequest | null>(null)
+  const [collectingVerifyReason, setCollectingVerifyReason] = useState(false)
 
   // AbortController — 用于 Ctrl+C 中止当前 query（对标 Claude Code interrupt()）
   const abortControllerRef = useRef<AbortController | null>(null)
+  // Ref for stale-closure-safe canUseTool access
+  const isPlanModeRef = useRef(false)
+  // Refs for cron scheduler (stale-closure-safe)
+  const handleSubmitRef = useRef<(input: string) => Promise<void>>(async () => {})
+  const isLoadingRef = useRef(false)
 
   // ── canUseTool 回调（传给 query()，在工具执行前弹出确认 UI）─────────────────
   // 对标 Claude Code canUseTool / wrappedCanUseTool
-  // TODO: Phase 2C ConfigTool — 根据配置决定是否弹窗，当前全部自动允许
   const canUseTool = useCallback<CanUseTool>(
-    (_name, _input) => Promise.resolve('allow'),
+    (name, _input) => {
+      if (isPlanModeRef.current && WRITE_TOOLS.has(name)) {
+        return Promise.resolve('deny')
+      }
+      return Promise.resolve('allow')
+    },
     [],
   )
 
@@ -59,6 +86,47 @@ export function REPL(_props: Props) {
       new Promise((resolve) => {
         setSelectedIndex(0)
         setAskUserRequest({ question, options, resolve })
+      }),
+    [],
+  )
+
+  const enterPlanMode = useCallback(() => {
+    setIsPlanMode(true)
+    isPlanModeRef.current = true
+    return Promise.resolve()
+  }, [])
+
+  const exitPlanMode = useCallback(
+    (plan: string) =>
+      new Promise<string>((promiseResolve) => {
+        setPlanApprovalRequest({
+          plan,
+          resolve: (result) => {
+            if (result === 'approved') {
+              // Rejected intentionally keeps plan mode active so model can revise
+              setIsPlanMode(false)
+              isPlanModeRef.current = false
+            }
+            setCollectingPlanReason(false)
+            setPlanApprovalRequest(null)
+            promiseResolve(result)
+          },
+        })
+      }),
+    [],
+  )
+
+  const verifyExecution = useCallback(
+    (summary: string) =>
+      new Promise<string>((promiseResolve) => {
+        setVerifyRequest({
+          summary,
+          resolve: (result) => {
+            setCollectingVerifyReason(false)
+            setVerifyRequest(null)
+            promiseResolve(result)
+          },
+        })
       }),
     [],
   )
@@ -83,6 +151,7 @@ export function REPL(_props: Props) {
 
       history.appendUserMessage(input)
       setIsLoading(true)
+      isLoadingRef.current = true
       history.startAssistantMessage()
 
       // 创建新的 AbortController（对标 Claude Code createAbortController）
@@ -100,9 +169,12 @@ export function REPL(_props: Props) {
           messages: currentMessages,
           tools,
           allTools,
-          systemPrompt: getSystemPrompt(),
+          systemPrompt: getSystemPrompt(isPlanModeRef.current),
           canUseTool,
           askUser,
+          enterPlanMode,
+          exitPlanMode,
+          verifyExecution,
           abortSignal: abortController.signal,
         })
 
@@ -135,7 +207,8 @@ export function REPL(_props: Props) {
             // ── 工具调用 ────────────────────────────────────────────────
             // tool_use 在 canUseTool 返回 allow 之后才 yield，此处只做 UI 展示
             case 'tool_use':
-              // 工具正在执行（权限已通过），此处关闭 permission UI
+              // 工具正在执行（权限已通过），记录 tool_use block 到 assistant message
+              history.appendToolUse(event.id, event.name, event.input)
               setPermissionRequest(null)
               break
 
@@ -151,11 +224,25 @@ export function REPL(_props: Props) {
         }
       } finally {
         setIsLoading(false)
+        isLoadingRef.current = false
         abortControllerRef.current = null
       }
     },
-    [tools, history, canUseTool, askUser],
+    [tools, history, canUseTool, askUser, enterPlanMode, exitPlanMode, verifyExecution],
   )
+
+  // Keep ref in sync with latest handleSubmit (stale-closure-safe for cron scheduler)
+  handleSubmitRef.current = handleSubmit
+
+  // ── Cron scheduler ────────────────────────────────────────────────────────
+  useEffect(() => {
+    const scheduler = createCronScheduler({
+      onFire: (prompt) => { void handleSubmitRef.current(prompt) },
+      isLoading: () => isLoadingRef.current,
+    })
+    scheduler.start()
+    return () => scheduler.stop()
+  }, [])
 
   // ── 键盘输入处理 ──────────────────────────────────────────────────────────
   useInput(
@@ -169,6 +256,33 @@ export function REPL(_props: Props) {
           const answer = askUserRequest.options[selectedIndex]?.label ?? ''
           setAskUserRequest(null)
           askUserRequest.resolve(answer)
+        }
+        return
+      }
+
+      if (collectingPlanReason || collectingVerifyReason) {
+        // PromptInput handles typing; don't intercept here
+        return
+      }
+
+      if (planApprovalRequest) {
+        if (input === 'y' || key.return) {
+          planApprovalRequest.resolve('approved')
+        } else if (input === 'n' || key.escape) {
+          planApprovalRequest.resolve('rejected')
+        } else if (input === 'r') {
+          setCollectingPlanReason(true)
+        }
+        return
+      }
+
+      if (verifyRequest) {
+        if (input === 'y' || key.return) {
+          verifyRequest.resolve('verified')
+        } else if (input === 'n' || key.escape) {
+          verifyRequest.resolve('rejected')
+        } else if (input === 'r') {
+          setCollectingVerifyReason(true)
         }
         return
       }
@@ -194,7 +308,21 @@ export function REPL(_props: Props) {
   return (
     <Box flexDirection="column" padding={1}>
       {/* 消息历史 */}
-      <Messages messages={history.messages} streamingText={history.streamingText} tools={tools} />
+      <Messages
+        messages={history.displayMessages}
+        streamingText={
+          history.displayMessages === history.messages ? history.streamingText : undefined
+        }
+        tools={tools}
+      />
+
+      {/* 计划模式状态栏 */}
+      {isPlanMode && (
+        <Box paddingX={1}>
+          <Text color="blue" bold>[PLAN MODE] </Text>
+          <Text color="gray">Write tools disabled — call exit_plan_mode when ready</Text>
+        </Box>
+      )}
 
       {/* 工具权限确认 */}
       {permissionRequest && (
@@ -236,11 +364,59 @@ export function REPL(_props: Props) {
         </Box>
       )}
 
+      {planApprovalRequest && (
+        <Box flexDirection="column" borderStyle="round" borderColor="blue" padding={1}>
+          <Text color="blue" bold>Plan Review</Text>
+          <Text> </Text>
+          <Text>{planApprovalRequest.plan}</Text>
+          <Text> </Text>
+          {collectingPlanReason ? (
+            <>
+              <Text color="yellow">Reason for rejection:</Text>
+              <PromptInput
+                onSubmit={(reason) => planApprovalRequest.resolve(reason || 'rejected')}
+                isLoading={false}
+              />
+            </>
+          ) : (
+            <Text>
+              <Text color="green">y</Text> approve{'  '}
+              <Text color="red">n</Text> reject{'  '}
+              <Text color="yellow">r</Text> reject with reason
+            </Text>
+          )}
+        </Box>
+      )}
+
+      {verifyRequest && (
+        <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1}>
+          <Text color="cyan" bold>Verify Execution</Text>
+          <Text> </Text>
+          <Text>{verifyRequest.summary}</Text>
+          <Text> </Text>
+          {collectingVerifyReason ? (
+            <>
+              <Text color="yellow">Reason for rejection:</Text>
+              <PromptInput
+                onSubmit={(reason) => verifyRequest.resolve(reason || 'rejected')}
+                isLoading={false}
+              />
+            </>
+          ) : (
+            <Text>
+              <Text color="green">y</Text> verified{'  '}
+              <Text color="red">n</Text> rejected{'  '}
+              <Text color="yellow">r</Text> reject with reason
+            </Text>
+          )}
+        </Box>
+      )}
+
       {/* 加载中 */}
-      {isLoading && !permissionRequest && !askUserRequest && <Spinner />}
+      {isLoading && !permissionRequest && !askUserRequest && !planApprovalRequest && !verifyRequest && <Spinner />}
 
       {/* 输入框 */}
-      {!isLoading && !askUserRequest && <PromptInput onSubmit={handleSubmit} isLoading={isLoading} />}
+      {!isLoading && !askUserRequest && !planApprovalRequest && !verifyRequest && <PromptInput onSubmit={handleSubmit} isLoading={isLoading} />}
     </Box>
   )
 }
