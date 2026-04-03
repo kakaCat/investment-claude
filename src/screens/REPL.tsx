@@ -40,9 +40,10 @@ export function REPL(_props: Props) {
         return
       }
       if (input === '/help') {
-        // 直接追加一条系统提示消息
         history.appendUserMessage('/help')
-        // 简单输出帮助信息（后续可扩展为真正的 slash command 系统）
+        history.startAssistantMessage()
+        history.appendStreamingDelta('Available commands:\n  /help  — show this message\n  /clear — clear the conversation')
+        history.finalizeAssistantMessage()
         return
       }
 
@@ -77,8 +78,10 @@ export function REPL(_props: Props) {
               })
               setPermissionRequest(null)
               if (!approved) {
-                // 用户拒绝：中止当前 turn
-                break
+                // 用户拒绝：中止整个 generator，跳出 for-await 循环
+                gen.return(undefined)
+                history.finalizeAssistantMessage()
+                return
               }
               break
             }
