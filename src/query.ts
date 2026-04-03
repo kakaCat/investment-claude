@@ -5,6 +5,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { Tool, ToolUseContext } from './Tool.js'
 import type { Message, StreamEvent, UserMessage, AssistantMessage } from './types/message.js'
+import { getAppState, setAppState } from './state/AppState.js'
 import { findTool } from './tools/index.js'
 
 // ── 类型 ──────────────────────────────────────────────────────────────────────
@@ -31,6 +32,9 @@ export type QueryParams = {
   canUseTool?: CanUseTool
   /** 将问题转交给 REPL，等待用户选择 */
   askUser?: ToolUseContext['askUser']
+  enterPlanMode?: ToolUseContext['enterPlanMode']
+  exitPlanMode?: ToolUseContext['exitPlanMode']
+  verifyExecution?: ToolUseContext['verifyExecution']
 }
 
 // ── 内部辅助 ──────────────────────────────────────────────────────────────────
@@ -218,6 +222,9 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
     abortSignal,
     canUseTool = defaultCanUseTool,
     askUser,
+    enterPlanMode,
+    exitPlanMode,
+    verifyExecution,
   } = params
 
   // ToolUseContext 在整个 query 生命周期内复用
@@ -225,7 +232,12 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
     abortSignal: abortSignal ?? new AbortController().signal,
     cwd: process.cwd(),
     tools: allTools ?? tools, // ToolSearchTool 能看到所有工具，包括 deferLoading 的
+    getAppState,
+    setAppState,
     askUser,
+    enterPlanMode,
+    exitPlanMode,
+    verifyExecution,
   }
 
   const client = new Anthropic({
