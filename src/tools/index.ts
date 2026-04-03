@@ -5,10 +5,22 @@
 import type { Tool } from '../Tool.js'
 import { BashTool } from './BashTool/BashTool.js'
 import { ReadTool } from './ReadTool/ReadTool.js'
+import { FileWriteTool } from './FileWriteTool/FileWriteTool.js'
+import { FileEditTool } from './FileEditTool/FileEditTool.js'
+import { GlobTool } from './GlobTool/GlobTool.js'
+import { GrepTool } from './GrepTool/GrepTool.js'
 import { ToolSearchTool } from './ToolSearchTool/ToolSearchTool.js'
 
 // 内置工具静态列表 — 新增工具在此 import + 加入数组
-const BUILTIN_TOOLS: Tool[] = [BashTool, ReadTool, ToolSearchTool]
+const BUILTIN_TOOLS: Tool[] = [
+  BashTool,
+  ReadTool,
+  FileWriteTool,
+  FileEditTool,
+  GlobTool,
+  GrepTool,
+  ToolSearchTool,
+]
 
 /** 所有工具（含 isEnabled=false 和 deferLoading=true），供 ToolSearchTool 搜索 */
 export function getAllTools(pluginTools: Tool[] = []): Tool[] {
