@@ -20,7 +20,7 @@ export const AskUserQuestionTool = buildTool({
   renderToolResult: (result) => <AskUserQuestionToolResultUI result={result} />,
   async call(input, context) {
     const { question, options } = input as { question: string; options: Array<{ label: string; description?: string }> }
-    if (!context.askUser) return options[0]?.label ?? 'No options provided'
+    if (!context.askUser) return `[No interactive UI available — defaulting to first option: ${options[0]?.label ?? 'none'}]`
     return context.askUser(question, options)
   },
 })
