@@ -5,17 +5,24 @@
 
 import type { TodoItem, Task } from '../tasks/types.js'
 
+type Assert<T extends true> = T
+type IsEqual<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends
+    (<T>() => T extends B ? 1 : 2)
+    ? true
+    : false
+
 export type AppState = {
   // ── 当前已实现 ────────────────────────────────────────────────────────────
 
   /** Todo list — TodoWriteTool 写，reminder 注入器读 */
-  todos: TodoItem[]
+  readonly todos: readonly TodoItem[]
 
   /** Task 注册表 — Task*Tools 读写 */
-  tasks: Map<number, Task>
+  readonly tasks: ReadonlyMap<number, Task>
 
   /** Task 自增 ID 计数器 */
-  nextTaskId: number
+  readonly nextTaskId: number
 
   // ── 以下字段对标 Claude Code，暂未实现 ──────────────────────────────────────
 
@@ -42,12 +49,12 @@ export type AppState = {
 
 let _state: AppState = {
   todos: [],
-  tasks: new Map(),
+  tasks: new Map<number, Task>() as ReadonlyMap<number, Task>,
   nextTaskId: 1,
 }
 
 /** 读取当前 AppState 快照 */
-export function getAppState(): AppState {
+export function getAppState(): Readonly<AppState> {
   return _state
 }
 
@@ -63,3 +70,18 @@ export function getAppState(): AppState {
 export function setAppState(updater: (prev: AppState) => AppState): void {
   _state = updater(_state)
 }
+
+type _GetAppStateReturnType = Assert<
+  IsEqual<ReturnType<typeof getAppState>, Readonly<AppState>>
+>
+
+declare const _appState: AppState
+
+// @ts-expect-error AppState fields must reject direct reassignment.
+_appState.nextTaskId = 2
+
+// @ts-expect-error AppState todos must be readonly.
+_appState.todos.push({} as TodoItem)
+
+// @ts-expect-error AppState tasks must be readonly.
+_appState.tasks.set(1, {} as Task)
