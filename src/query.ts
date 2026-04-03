@@ -6,6 +6,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { Tool, ToolUseContext } from './Tool.js'
 import type { Message, StreamEvent, UserMessage, AssistantMessage } from './types/message.js'
 import { getAppState, setAppState } from './state/AppState.js'
+import { buildTodoReminderIfNeeded } from './state/todoReminder.js'
 import { findTool } from './tools/index.js'
 
 // ── 类型 ──────────────────────────────────────────────────────────────────────
@@ -297,5 +298,16 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
 
     // tool_result 作为 user 消息回灌给模型，这是 Anthropic 工具调用协议要求的格式。
     currentMessages.push({ type: 'user', content: toolResults })
+
+    // Todo reminder 注入（对标 Claude Code getTodoReminderAttachments）
+    // 上下文压缩后 todo_write 历史消失，turnsSinceLastTodoWrite 会变大，
+    // 触发注入让模型重新感知当前任务状态。
+    const todoReminder = buildTodoReminderIfNeeded(
+      currentMessages,
+      getAppState().todos,
+    )
+    if (todoReminder) {
+      currentMessages.push(todoReminder)
+    }
   }
 }
