@@ -10,11 +10,22 @@ export type ToolUseContext = {
   cwd: string
   /** 全部工具列表（含 deferLoading），供 ToolSearchTool 遍历 */
   tools: Tool[]
+  // Design note: agent definitions are NOT stored in ToolUseContext.
+  // AgentTool loads them directly from disk + built-in registry.
+  // Rationale: context = execution environment; agent registry = AgentTool's concern.
+  // If multiple tools ever need agent access, follow Claude Code's pattern of
+  // a toolUseContext.options bag rather than polluting the core context fields.
   /** 将工具问题交还给 REPL，等待用户选择后再继续 */
   askUser?: (
     question: string,
     options: ReadonlyArray<{ label: string; description?: string }>,
   ) => Promise<string>
+  /** Signal REPL to activate plan mode */
+  enterPlanMode?: () => Promise<void>
+  /** Present plan to user, wait for approval. Resolves 'approved', 'rejected', or a rejection reason string */
+  exitPlanMode?: (plan: string) => Promise<string>
+  /** Present execution summary to user, wait for verification. Resolves 'verified', 'rejected', or a rejection reason string */
+  verifyExecution?: (summary: string) => Promise<string>
 }
 
 /** 工具接口 */

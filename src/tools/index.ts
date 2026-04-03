@@ -11,10 +11,27 @@ import { GlobTool } from './GlobTool/GlobTool.js'
 import { GrepTool } from './GrepTool/GrepTool.js'
 import { AskUserQuestionTool } from './AskUserQuestionTool/AskUserQuestionTool.js'
 import { SendUserFileTool } from './SendUserFileTool/SendUserFileTool.js'
+import { EnterPlanModeTool } from './EnterPlanModeTool/EnterPlanModeTool.js'
+import { ExitPlanModeTool } from './ExitPlanModeTool/ExitPlanModeTool.js'
+import { VerifyPlanExecutionTool } from './VerifyPlanExecutionTool/VerifyPlanExecutionTool.js'
 import { ToolSearchTool } from './ToolSearchTool/ToolSearchTool.js'
+import { TodoWriteTool } from './TodoWriteTool/TodoWriteTool.js'
+import { TaskCreateTool } from './TaskCreateTool/TaskCreateTool.js'
+import { TaskGetTool } from './TaskGetTool/TaskGetTool.js'
+import { TaskListTool } from './TaskListTool/TaskListTool.js'
+import { TaskUpdateTool } from './TaskUpdateTool/TaskUpdateTool.js'
+import { TaskStopTool } from './TaskStopTool/TaskStopTool.js'
+import { TaskOutputTool } from './TaskOutputTool/TaskOutputTool.js'
+import { CronCreateTool } from './ScheduleCronTool/CronCreateTool.js'
+import { CronDeleteTool } from './ScheduleCronTool/CronDeleteTool.js'
+import { CronListTool } from './ScheduleCronTool/CronListTool.js'
+import { SkillTool } from './SkillTool/SkillTool.js'
+import { DiscoverSkillsTool } from './DiscoverSkillsTool/DiscoverSkillsTool.js'
+import { AgentTool } from './AgentTool/AgentTool.js'
 
 // 内置工具静态列表 — 新增工具在此 import + 加入数组
 const BUILTIN_TOOLS: Tool[] = [
+  AgentTool,
   BashTool,
   ReadTool,
   FileWriteTool,
@@ -23,7 +40,22 @@ const BUILTIN_TOOLS: Tool[] = [
   GrepTool,
   AskUserQuestionTool,
   SendUserFileTool,
+  EnterPlanModeTool,
+  ExitPlanModeTool,
+  VerifyPlanExecutionTool,
   ToolSearchTool,
+  TodoWriteTool,
+  TaskCreateTool,
+  TaskGetTool,
+  TaskListTool,
+  TaskUpdateTool,
+  TaskStopTool,
+  TaskOutputTool,
+  CronCreateTool,
+  CronDeleteTool,
+  CronListTool,
+  SkillTool,
+  DiscoverSkillsTool,
 ]
 
 /** 所有工具（含 isEnabled=false 和 deferLoading=true），供 ToolSearchTool 搜索 */
