@@ -29,6 +29,8 @@ export type QueryParams = {
   abortSignal?: AbortSignal
   /** 工具权限检查（未提供时默认全部允许）*/
   canUseTool?: CanUseTool
+  /** 将问题转交给 REPL，等待用户选择 */
+  askUser?: ToolUseContext['askUser']
 }
 
 // ── 内部辅助 ──────────────────────────────────────────────────────────────────
@@ -215,13 +217,15 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
     maxTurns = 10,
     abortSignal,
     canUseTool = defaultCanUseTool,
+    askUser,
   } = params
 
   // ToolUseContext 在整个 query 生命周期内复用
   const toolUseContext: ToolUseContext = {
     abortSignal: abortSignal ?? new AbortController().signal,
     cwd: process.cwd(),
-    tools: allTools ?? tools,  // ToolSearchTool 能看到所有工具，包括 deferLoading 的
+    tools: allTools ?? tools, // ToolSearchTool 能看到所有工具，包括 deferLoading 的
+    askUser,
   }
 
   const client = new Anthropic({

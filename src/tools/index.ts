@@ -9,6 +9,7 @@ import { FileWriteTool } from './FileWriteTool/FileWriteTool.js'
 import { FileEditTool } from './FileEditTool/FileEditTool.js'
 import { GlobTool } from './GlobTool/GlobTool.js'
 import { GrepTool } from './GrepTool/GrepTool.js'
+import { AskUserQuestionTool } from './AskUserQuestionTool/AskUserQuestionTool.js'
 import { ToolSearchTool } from './ToolSearchTool/ToolSearchTool.js'
 
 // 内置工具静态列表 — 新增工具在此 import + 加入数组
@@ -19,6 +20,7 @@ const BUILTIN_TOOLS: Tool[] = [
   FileEditTool,
   GlobTool,
   GrepTool,
+  AskUserQuestionTool,
   ToolSearchTool,
 ]
 

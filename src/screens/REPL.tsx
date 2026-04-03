@@ -14,6 +14,7 @@ import { PromptInput } from '../components/PromptInput.js'
 import { Spinner } from '../components/Spinner.js'
 import type { SSHSession } from '../ssh/index.js'
 import type { SwarmConfig } from '../swarm/index.js'
+import type { ToolUseContext } from '../Tool.js'
 
 type Props = {
   // Stub props — 接口预留，当前不使用
@@ -27,12 +28,20 @@ type PermissionRequest = {
   resolve: (decision: 'allow' | 'deny') => void
 }
 
+type AskUserRequest = {
+  question: string
+  options: ReadonlyArray<{ label: string; description?: string }>
+  resolve: (answer: string) => void
+}
+
 export function REPL(_props: Props) {
   const tools = useMergedTools()
   const allTools = useMemo(() => getAllTools(getPluginTools()), [])
   const history = useAssistantHistory()
   const [isLoading, setIsLoading] = useState(false)
   const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null)
+  const [askUserRequest, setAskUserRequest] = useState<AskUserRequest | null>(null)
+  const [selectedIndex, setSelectedIndex] = useState(0)
 
   // AbortController — 用于 Ctrl+C 中止当前 query（对标 Claude Code interrupt()）
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -43,6 +52,15 @@ export function REPL(_props: Props) {
     (name, input) =>
       new Promise((resolve) => {
         setPermissionRequest({ toolName: name, input, resolve })
+      }),
+    [],
+  )
+
+  const askUser = useCallback<NonNullable<ToolUseContext['askUser']>>(
+    (question, options) =>
+      new Promise((resolve) => {
+        setSelectedIndex(0)
+        setAskUserRequest({ question, options, resolve })
       }),
     [],
   )
@@ -86,6 +104,7 @@ export function REPL(_props: Props) {
           allTools,
           systemPrompt: getSystemPrompt(),
           canUseTool,
+          askUser,
           abortSignal: abortController.signal,
         })
 
@@ -137,12 +156,25 @@ export function REPL(_props: Props) {
         abortControllerRef.current = null
       }
     },
-    [tools, history, canUseTool],
+    [tools, history, canUseTool, askUser],
   )
 
   // ── 键盘输入处理 ──────────────────────────────────────────────────────────
   useInput(
     (input, key) => {
+      if (askUserRequest) {
+        if (key.upArrow) {
+          setSelectedIndex((i) => Math.max(0, i - 1))
+        } else if (key.downArrow) {
+          setSelectedIndex((i) => Math.min(askUserRequest.options.length - 1, i + 1))
+        } else if (key.return) {
+          const answer = askUserRequest.options[selectedIndex]?.label ?? ''
+          setAskUserRequest(null)
+          askUserRequest.resolve(answer)
+        }
+        return
+      }
+
       // 权限确认
       if (permissionRequest) {
         if (input === 'y' || key.return) {
@@ -184,11 +216,33 @@ export function REPL(_props: Props) {
         </Box>
       )}
 
+      {askUserRequest && (
+        <Box flexDirection="column" borderStyle="round" borderColor="magenta" padding={1}>
+          <Text color="magenta" bold>
+            {askUserRequest.question}
+          </Text>
+          <Text> </Text>
+          {askUserRequest.options.map((opt, i) => (
+            <Box key={i}>
+              <Text color={i === selectedIndex ? 'magenta' : 'gray'} bold={i === selectedIndex}>
+                {i === selectedIndex ? '▶ ' : '  '}
+                {opt.label}
+              </Text>
+              {opt.description && <Text color="gray"> - {opt.description}</Text>}
+            </Box>
+          ))}
+          <Text> </Text>
+          <Text color="gray" dimColor>
+            ↑↓ navigate  Enter to select
+          </Text>
+        </Box>
+      )}
+
       {/* 加载中 */}
-      {isLoading && !permissionRequest && <Spinner />}
+      {isLoading && !permissionRequest && !askUserRequest && <Spinner />}
 
       {/* 输入框 */}
-      {!isLoading && <PromptInput onSubmit={handleSubmit} isLoading={isLoading} />}
+      {!isLoading && !askUserRequest && <PromptInput onSubmit={handleSubmit} isLoading={isLoading} />}
     </Box>
   )
 }
