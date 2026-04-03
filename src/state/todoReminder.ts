@@ -32,6 +32,25 @@ function turnsSinceLastTodoWrite(messages: Message[]): number {
   return Number.MAX_SAFE_INTEGER
 }
 
+/** 检查最近是否已经注入过 reminder，防止重复累积 */
+function hasRecentReminder(messages: Message[]): boolean {
+  let assistantTurns = 0
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg.type === 'user') {
+      const hasReminder = msg.content.some(
+        (c) => c.type === 'text' && c.text.includes('<system-reminder>'),
+      )
+      if (hasReminder) return true
+    }
+    if (msg.type === 'assistant') {
+      assistantTurns++
+      if (assistantTurns >= TURNS_SINCE_WRITE) break
+    }
+  }
+  return false
+}
+
 /**
  * 如果距上次 todo_write 已超过阈值轮次，返回一条包含当前 todos 的 UserMessage
  * 用于注入进 query 的 currentMessages，让模型重新感知任务状态。
@@ -43,6 +62,7 @@ export function buildTodoReminderIfNeeded(
   todos: readonly TodoItem[],
 ): UserMessage | null {
   if (todos.length === 0) return null
+  if (hasRecentReminder(messages)) return null
   if (turnsSinceLastTodoWrite(messages) < TURNS_SINCE_WRITE) return null
 
   return {
