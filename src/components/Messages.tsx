@@ -41,22 +41,23 @@ function ToolUseBubble({
   name,
   input,
   tools,
+  status,
 }: {
   name: string
   input: unknown
   tools: Tool[]
+  status?: 'success' | 'error'
 }) {
+  const dotColor = status === 'success' ? 'green' : status === 'error' ? 'red' : 'gray'
   const tool = findTool(name, tools)
   return (
-    <Box marginBottom={1} paddingLeft={2}>
+    <Box marginBottom={0} paddingLeft={2} flexDirection="row" gap={1}>
+      <Text color={dotColor}>●</Text>
+      <Text bold>{name}</Text>
       {tool ? (
         tool.renderToolUse(input)
       ) : (
-        <>
-          <Text color="yellow">⚙ {name}(</Text>
-          <Text color="gray">{JSON.stringify(input)}</Text>
-          <Text color="yellow">)</Text>
-        </>
+        <Text color="gray">{JSON.stringify(input)}</Text>
       )}
     </Box>
   )
@@ -76,17 +77,22 @@ function ToolResultBubble({
   const toolName = toolUseNames.get(toolUseId)
   const tool = toolName ? findTool(toolName, tools) : undefined
   return (
-    <Box marginBottom={1} paddingLeft={2}>
-      {tool ? (
-        tool.renderToolResult(content)
-      ) : (
-        <Box borderStyle="single" borderColor="gray">
-          <Text color="gray">
-            {content.slice(0, 500)}
-            {content.length > 500 ? '…' : ''}
+    <Box
+      marginBottom={1}
+      paddingLeft={2}
+      borderStyle="round"
+      borderColor="gray"
+      width="100%"
+    >
+      <Box width="100%">
+        {tool ? (
+          tool.renderToolResult(content)
+        ) : (
+          <Text wrap="wrap" color="gray">
+            {content.length > 500 ? content.slice(0, 500) + '…' : content}
           </Text>
-        </Box>
-      )}
+        )}
+      </Box>
     </Box>
   )
 }
@@ -101,6 +107,23 @@ export function Messages({ messages, streamingText, tools }: Props) {
         for (const c of msg.content) {
           if (c.type === 'tool_use') {
             map.set(c.id, c.name)
+          }
+        }
+      }
+    }
+    return map
+  }, [messages])
+
+  // Build a lookup map: tool_use_id → 'success' | 'error'
+  const toolUseResultStatus = useMemo<Map<string, 'success' | 'error'>>(() => {
+    const map = new Map<string, 'success' | 'error'>()
+    for (const msg of messages) {
+      if (msg.type === 'user') {
+        for (const c of msg.content) {
+          if (c.type === 'tool_result') {
+            const isError =
+              c.content.startsWith('Error') || c.content.startsWith('ERROR:')
+            map.set(c.tool_use_id, isError ? 'error' : 'success')
           }
         }
       }
@@ -142,7 +165,13 @@ export function Messages({ messages, streamingText, tools }: Props) {
             <Box key={i} flexDirection="column">
               {text && <AssistantBubble text={text} />}
               {toolUses.map((t, j) => (
-                <ToolUseBubble key={j} name={t.name} input={t.input} tools={tools} />
+                <ToolUseBubble
+                  key={j}
+                  name={t.name}
+                  input={t.input}
+                  tools={tools}
+                  status={toolUseResultStatus.get(t.id)}
+                />
               ))}
             </Box>
           )
