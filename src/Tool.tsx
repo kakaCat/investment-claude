@@ -4,11 +4,6 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 
-export type AskUserOption = {
-  label: string
-  description?: string
-}
-
 /** 工具执行上下文（对标 Claude Code ToolUseContext，简化版） */
 export type ToolUseContext = {
   abortSignal: AbortSignal
@@ -16,7 +11,10 @@ export type ToolUseContext = {
   /** 全部工具列表（含 deferLoading），供 ToolSearchTool 遍历 */
   tools: Tool[]
   /** 将工具问题交还给 REPL，等待用户选择后再继续 */
-  askUser?: (question: string, options: ReadonlyArray<AskUserOption>) => Promise<string>
+  askUser?: (
+    question: string,
+    options: ReadonlyArray<{ label: string; description?: string }>,
+  ) => Promise<string>
 }
 
 /** 工具接口 */

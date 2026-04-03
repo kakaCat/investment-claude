@@ -228,7 +228,7 @@ export function REPL(_props: Props) {
                 {i === selectedIndex ? '▶ ' : '  '}
                 {opt.label}
               </Text>
-              {opt.description && <Text color="gray"> - {opt.description}</Text>}
+              {opt.description && <Text color="gray"> — {opt.description}</Text>}
             </Box>
           ))}
           <Text> </Text>
