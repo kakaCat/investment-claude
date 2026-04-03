@@ -1,6 +1,6 @@
 import React from 'react'
 import { readFile } from 'fs/promises'
-import { resolve } from 'path'
+import { resolve, relative } from 'path'
 import fg from 'fast-glob'
 import { buildTool } from '../../Tool.js'
 import { DESCRIPTION, SEARCH_HINT } from './prompt.js'
@@ -45,7 +45,7 @@ export const GrepTool = buildTool({
     try {
       files = await fg(glob, {
         cwd: searchDir,
-        dot: false,
+        dot: true,
         ignore: ['**/node_modules/**', '**/.git/**'],
         absolute: true,
       })
@@ -56,6 +56,7 @@ export const GrepTool = buildTool({
 
     const results: string[] = []
     for (const file of files) {
+      if (context.abortSignal.aborted) break
       if (results.length >= MAX_RESULTS) break
       let content: string
       try {
@@ -66,7 +67,7 @@ export const GrepTool = buildTool({
       const lines = content.split('\n')
       for (let i = 0; i < lines.length; i++) {
         if (regex.test(lines[i])) {
-          const rel = file.startsWith(searchDir) ? file.slice(searchDir.length + 1) : file
+          const rel = relative(searchDir, file)
           results.push(`${rel}:${i + 1}: ${lines[i].trim()}`)
           if (results.length >= MAX_RESULTS) break
         }

@@ -17,7 +17,7 @@ export function GrepToolUseUI({
 }
 
 export function GrepToolResultUI({ result }: { result: string }) {
-  const preview = result.length > 500 ? result.slice(0, 500) + '\n…' : result
+  const preview = result.length > 500 ? result.slice(0, 500) + '…' : result
   return (
     <Box flexDirection="column" paddingLeft={1}>
       <Text color="gray">{preview}</Text>
