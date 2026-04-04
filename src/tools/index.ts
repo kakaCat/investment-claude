@@ -28,16 +28,20 @@ import { CronListTool } from './ScheduleCronTool/CronListTool.js'
 import { SkillTool } from './SkillTool/SkillTool.js'
 import { DiscoverSkillsTool } from './DiscoverSkillsTool/DiscoverSkillsTool.js'
 import { AgentTool } from './AgentTool/AgentTool.js'
+import { ExitTool } from './ExitTool/ExitTool.js'
+import { WebFetchTool } from './WebFetchTool/WebFetchTool.js'
 
 // 内置工具静态列表 — 新增工具在此 import + 加入数组
 const BUILTIN_TOOLS: Tool[] = [
   AgentTool,
+  ExitTool,
   BashTool,
   ReadTool,
   FileWriteTool,
   FileEditTool,
   GlobTool,
   GrepTool,
+  WebFetchTool,
   AskUserQuestionTool,
   SendUserFileTool,
   EnterPlanModeTool,

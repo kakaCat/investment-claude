@@ -22,7 +22,7 @@ function mockGitRepo(overrides: Partial<Record<string, string>> = {}) {
   const map = { ...defaults, ...overrides }
   execSyncMock.mockImplementation((cmd: string) => {
     for (const [key, val] of Object.entries(map)) {
-      if (cmd.includes(key)) return val
+      if (cmd.includes(key)) return val as string
     }
     return ''
   })
