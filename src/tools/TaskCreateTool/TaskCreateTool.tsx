@@ -2,7 +2,7 @@ import React from 'react'
 import { buildTool } from '../../Tool.js'
 import { DESCRIPTION, SEARCH_HINT } from './prompt.js'
 import { TaskCreateToolUseUI, TaskCreateToolResultUI } from './UI.js'
-import type { Task } from '../../tasks/types.js'
+import { createTaskFile } from '../../tasks/taskFileStore.js'
 
 export const TaskCreateTool = buildTool({
   name: 'task_create',
@@ -32,28 +32,24 @@ export const TaskCreateTool = buildTool({
       activeForm?: string
       blockedBy?: number[]
     }
-    let createdTask: Task | undefined
-    context.setAppState((prev) => {
-      const now = new Date().toISOString()
-      const task: Task = {
-        id: prev.nextTaskId,
-        subject,
-        description,
-        activeForm,
-        status: 'pending',
-        blockedBy: blockedBy ?? [],
-        owner: undefined,
-        createdAt: now,
-        updatedAt: now,
-      }
-      createdTask = task
-      return {
-        ...prev,
-        nextTaskId: prev.nextTaskId + 1,
-        tasks: new Map(prev.tasks).set(task.id, task),
-      }
-    })
-    if (!createdTask) return 'ERROR: Failed to create task.'
-    return JSON.stringify(createdTask)
+    const now = new Date().toISOString()
+    try {
+      const task = await createTaskFile(
+        {
+          subject,
+          description,
+          activeForm,
+          status: 'pending',
+          blockedBy: blockedBy ?? [],
+          owner: undefined,
+          createdAt: now,
+          updatedAt: now,
+        },
+        context,
+      )
+      return JSON.stringify(task)
+    } catch (err) {
+      return `ERROR: ${err instanceof Error ? err.message : String(err)}`
+    }
   },
 })
