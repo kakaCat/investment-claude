@@ -4,14 +4,13 @@
 
 import React, { useMemo } from 'react'
 import { Box, Text } from 'ink'
-import type { Message } from '../types/message.js'
+import type { Message, TextContent } from '../types/message.js'
 import type { Tool } from '../Tool.js'
 import { findTool } from '../tools/index.js'
 import { getAssistantText, getToolUses } from '../utils/messages.js'
 
 type Props = {
   messages: Message[]
-  streamingText?: string
   tools: Tool[]
 }
 
@@ -106,7 +105,7 @@ function ToolCallBlock({
   )
 }
 
-export function Messages({ messages, streamingText, tools }: Props) {
+export function Messages({ messages, tools }: Props) {
   // Build a lookup map: tool_use_id → result content (from tool_result blocks)
   const toolResults = useMemo<Map<string, string>>(() => {
     const map = new Map<string, string>()
@@ -149,11 +148,23 @@ export function Messages({ messages, streamingText, tools }: Props) {
         }
 
         if (msg.type === 'assistant') {
-          const text = getAssistantText(msg)
           const toolUses = getToolUses(msg)
+          // Text that appears AFTER the last tool_use is the final reply — show it.
+          // Text that appears BEFORE any tool_use is pre-tool narration — hide it.
+          const lastToolUseIdx = msg.content.reduce(
+            (last, c, idx) => (c.type === 'tool_use' ? idx : last),
+            -1,
+          )
+          const trailingText = msg.content
+            .slice(lastToolUseIdx + 1)
+            .filter((c): c is TextContent => c.type === 'text')
+            .map((c) => c.text)
+            .join('')
           return (
             <Box key={i} flexDirection="column">
-              {text && <AssistantBubble text={text} />}
+              {toolUses.length === 0 && getAssistantText(msg) && (
+                <AssistantBubble text={getAssistantText(msg)} />
+              )}
               {toolUses.map((t, j) => (
                 <ToolCallBlock
                   key={j}
@@ -164,21 +175,13 @@ export function Messages({ messages, streamingText, tools }: Props) {
                   status={toolUseResultStatus.get(t.id)}
                 />
               ))}
+              {trailingText && <AssistantBubble text={trailingText} />}
             </Box>
           )
         }
 
         return null
       })}
-
-      {streamingText && (
-        <Box marginBottom={1} flexDirection="column">
-          <Text color="green" bold>
-            Pi:{' '}
-          </Text>
-          <Text>{streamingText}</Text>
-        </Box>
-      )}
     </Box>
   )
 }

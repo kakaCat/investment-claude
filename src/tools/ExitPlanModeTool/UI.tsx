@@ -1,11 +1,10 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 
-export function ExitPlanModeToolUseUI({ input }: { input: { plan: string } }) {
+export function ExitPlanModeToolUseUI({ input: _input }: { input: { plan: string } }) {
   return (
-    <Box flexDirection="column">
-      <Text color="blue" bold>exit plan mode </Text>
-      <Text color="gray">{input.plan.slice(0, 100)}{input.plan.length > 100 ? '…' : ''}</Text>
+    <Box>
+      <Text color="gray">presenting plan for review…</Text>
     </Box>
   )
 }
