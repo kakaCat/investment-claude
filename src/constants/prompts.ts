@@ -1,20 +1,47 @@
-// 系统提示词 — 对标 Claude Code src/constants/prompts.ts
-// 当前阶段：简单占位，后续会扩展
+// src/constants/prompts.ts
+// 系统提示词主入口 — 对标 Claude Code src/constants/prompts.ts
 
-export function getSystemPrompt(isPlanMode = false): string {
-  const base = `You are Pi, an AI coding assistant running in the terminal.
-You help users with software engineering tasks.
-When you need to run commands or read files, use the available tools.
+import {
+  registerSection,
+  registerVolatileSection,
+  resolveSystemPrompt,
+  clearSectionCache,
+  type SectionContext,
+} from './systemPromptSections.js'
+import { IDENTITY, DOING_TASKS, TONE, PLAN_MODE_SECTION } from './promptSections.js'
+import { loadEnvInfo } from '../context/envContext.js'
+import { loadWorkspaceSection } from '../context/workspaceContext.js'
+import { loadGitStatus } from '../context/gitContext.js'
+import { loadClaudeMd } from '../context/claudeMdContext.js'
+import { loadMemory } from '../context/memoryContext.js'
 
-Tool usage rules:
-- After writing or creating a file with write_file or edit_file, always call send_file with the file path so the user can see it.
-- When you are unsure how to proceed, use ask_followup_question to ask the user.
-- Do NOT narrate or describe what you are about to do before calling a tool. Call the tool directly. The tool result and UI will speak for themselves.`
+let initialized = false
 
-  if (isPlanMode) {
-    return base + `
+export function initSystemPrompt(): void {
+  if (initialized) return
+  initialized = true
 
-PLAN MODE ACTIVE: Do NOT call write_file, edit_file, or bash tools. Only use read-only tools (read_file, glob, grep). When you have formulated a complete plan, call exit_plan_mode with the full plan text. Do NOT write out the plan as text before calling exit_plan_mode — put the plan directly in the tool call.`
-  }
-  return base
+  // 静态段（缓存后永不失效）
+  registerSection('identity', async () => IDENTITY)
+  registerSection('doing_tasks', async () => DOING_TASKS)
+  registerSection('tone', async () => TONE)
+
+  // 动态段（首次加载后缓存，/clear 时重置）
+  registerSection('env_info', (ctx) => loadEnvInfo(ctx))
+  registerSection('workspace', (ctx) => loadWorkspaceSection(ctx))
+  registerSection('git_status', (ctx) => loadGitStatus(ctx.cwd))
+  registerSection('claude_md', (ctx) => loadClaudeMd(ctx.cwd))
+  registerSection('memory', (ctx) => loadMemory(ctx.cwd))
+
+  // volatile 段（每轮重新执行）
+  registerVolatileSection('plan_mode', async (ctx) =>
+    ctx.isPlanMode ? PLAN_MODE_SECTION : null,
+  )
 }
+
+export async function getSystemPrompt(ctx: SectionContext): Promise<string> {
+  return resolveSystemPrompt(ctx)
+}
+
+export { clearSectionCache }
+export type { SectionContext }
