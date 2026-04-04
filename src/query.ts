@@ -10,6 +10,7 @@ import { buildTodoReminderIfNeeded } from './state/todoReminder.js'
 import { findTool } from './tools/index.js'
 import { initTaskStore } from './tasks/taskFileStore.js'
 import { autoCompactIfNeeded } from './compact/autoCompact.js'
+import { executeHooks } from './hooks/index.js'
 
 // ── 类型 ──────────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ export type QueryParams = {
   enterPlanMode?: ToolUseContext['enterPlanMode']
   exitPlanMode?: ToolUseContext['exitPlanMode']
   verifyExecution?: ToolUseContext['verifyExecution']
+  sessionId?: string
 }
 
 // ── 内部辅助 ──────────────────────────────────────────────────────────────────
@@ -156,22 +158,56 @@ async function* executeTools(
   tools: Tool[],
   canUseTool: CanUseTool,
   context: ToolUseContext,
+  sessionId: string,
 ): AsyncGenerator<StreamEvent, UserMessage['content']> {
   const toolResults: UserMessage['content'] = []
 
   for (const c of toolUses) {
     if (c.type !== 'tool_use') continue
 
-    // 权限检查（对标 Claude Code canUseTool）
-    const permission = await canUseTool(c.name, c.input)
+    // Fire PreToolUse hook — may override permission
+    const preToolHookResult = await executeHooks(
+      {
+        hook_event_name: 'PreToolUse',
+        tool_name: c.name,
+        tool_input: c.input,
+        session_id: sessionId,
+        cwd: context.cwd,
+      },
+      { matcherQuery: c.name, signal: context.abortSignal },
+    )
+
+    let permission: 'allow' | 'deny'
+    if (preToolHookResult.permissionDecision === 'deny') {
+      permission = 'deny'
+    } else if (preToolHookResult.preventContinuation) {
+      return toolResults
+    } else {
+      // 权限检查（对标 Claude Code canUseTool）
+      permission = await canUseTool(c.name, c.input)
+    }
+
     if (permission === 'deny') {
       yield { type: 'tool_denied', tool_use_id: c.id, name: c.name }
+      await executeHooks(
+        {
+          hook_event_name: 'PermissionDenied',
+          tool_name: c.name,
+          tool_input: c.input,
+          session_id: sessionId,
+          cwd: context.cwd,
+        },
+        { matcherQuery: c.name, signal: context.abortSignal },
+      )
       toolResults.push({
         type: 'tool_result',
         tool_use_id: c.id,
         // 仍然补一条 tool_result，保证模型下一轮能看到“工具未执行”的结果。
         content: 'Tool use was denied by the user.',
       })
+      if (preToolHookResult.preventContinuation) {
+        return toolResults
+      }
       continue
     }
 
@@ -185,8 +221,31 @@ async function* executeTools(
     } else {
       try {
         result = await tool.call(c.input, context)
+        await executeHooks(
+          {
+            hook_event_name: 'PostToolUse',
+            tool_name: c.name,
+            tool_input: c.input,
+            tool_response: result,
+            session_id: sessionId,
+            cwd: context.cwd,
+          },
+          { matcherQuery: c.name, signal: context.abortSignal },
+        )
       } catch (err) {
-        result = `Error: ${err instanceof Error ? err.message : String(err)}`
+        const errMsg = err instanceof Error ? err.message : String(err)
+        result = `Error: ${errMsg}`
+        await executeHooks(
+          {
+            hook_event_name: 'PostToolUseFailure',
+            tool_name: c.name,
+            tool_input: c.input,
+            tool_error: errMsg,
+            session_id: sessionId,
+            cwd: context.cwd,
+          },
+          { matcherQuery: c.name, signal: context.abortSignal },
+        )
       }
     }
 
@@ -230,7 +289,10 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
     enterPlanMode,
     exitPlanMode,
     verifyExecution,
+    sessionId: paramsSessionId,
   } = params
+
+  const sessionId = paramsSessionId ?? ''
 
   await initTaskStore()
 
@@ -298,6 +360,12 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
         abortSignal,
       })
     } catch (err) {
+      await executeHooks({
+        hook_event_name: 'StopFailure',
+        error: err instanceof Error ? err.message : String(err),
+        session_id: sessionId,
+        cwd: toolUseContext.cwd,
+      })
       yield { type: 'error', error: err instanceof Error ? err : new Error(String(err)) }
       return
     }
@@ -310,12 +378,18 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
     if (toolUses.length === 0) {
       // 无工具调用 → 对话结束，先快照当前完整消息供下一轮使用
       yield { type: 'messages_snapshot', messages: [...currentMessages] }
+      await executeHooks({
+        hook_event_name: 'Stop',
+        stop_reason: 'done',
+        session_id: sessionId,
+        cwd: toolUseContext.cwd,
+      })
       yield { type: 'done' }
       return
     }
 
     // ── 执行工具（含权限检查）──────────────────────────────────────────────
-    const toolResults = yield* executeTools(assistantContent, tools, canUseTool, toolUseContext)
+    const toolResults = yield* executeTools(assistantContent, tools, canUseTool, toolUseContext, sessionId)
 
     // tool_result 作为 user 消息回灌给模型，这是 Anthropic 工具调用协议要求的格式。
     currentMessages.push({ type: 'user', content: toolResults })
