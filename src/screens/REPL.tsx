@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { query, type CanUseTool } from '../query.js'
-import { getSystemPrompt } from '../constants/prompts.js'
+import { getSystemPrompt, initSystemPrompt, clearSectionCache, type SectionContext } from '../constants/prompts.js'
 import { executeHooks } from '../hooks/index.js'
 import { useMergedTools } from '../hooks/useMergedTools.js'
 import { getAllTools } from '../tools/index.js'
@@ -21,6 +21,7 @@ import type { Message } from '../types/message.js'
 import { createCronScheduler } from '../cron/cronScheduler.js'
 import { compactConversation, partialCompactConversation } from '../compact/index.js'
 import { initSessionMemory } from '../sessionMemory/index.js'
+import { getWorkDir, getSessionId, getWorkspaceDir } from '../bootstrap/state.js'
 
 type Props = {
   // Stub props — 接口预留，当前不使用
@@ -53,6 +54,9 @@ type VerifyRequest = {
 const WRITE_TOOLS = new Set(['write_file', 'edit_file', 'bash'])
 
 export function REPL(_props: Props) {
+  // 初始化系统提示词注册表（只执行一次）
+  initSystemPrompt()
+
   const tools = useMergedTools()
   const allTools = useMemo(() => getAllTools(getPluginTools()), [])
   const history = useAssistantHistory()
@@ -163,6 +167,7 @@ export function REPL(_props: Props) {
           session_id: sessionIdRef.current,
           cwd: process.cwd(),
         })
+        clearSectionCache()
         history.clearMessages()
         conversationRef.current = []
         return
@@ -243,7 +248,12 @@ export function REPL(_props: Props) {
           messages: currentMessages,
           tools,
           allTools,
-          systemPrompt: getSystemPrompt(isPlanModeRef.current),
+          systemPrompt: await getSystemPrompt({
+            cwd: getWorkDir(),
+            sessionId: getSessionId(),
+            workspaceDir: getWorkspaceDir(),
+            isPlanMode: isPlanModeRef.current,
+          } satisfies SectionContext),
           canUseTool,
           askUser,
           enterPlanMode,
