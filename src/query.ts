@@ -52,10 +52,12 @@ function toSDKTool(tool: Tool): Anthropic.Tool {
 
 /** 将 Pi 的 Message[] 转换为 Anthropic SDK 格式 */
 function toSDKMessages(messages: Message[]): Anthropic.MessageParam[] {
-  return messages.map((msg) => ({
-    role: msg.type as 'user' | 'assistant',
-    content: msg.content as Anthropic.MessageParam['content'],
-  }))
+  return messages
+    .filter((msg): msg is Exclude<Message, { type: 'compact_boundary' }> => msg.type !== 'compact_boundary')
+    .map((msg) => ({
+      role: msg.type as 'user' | 'assistant',
+      content: msg.content as Anthropic.MessageParam['content'],
+    }))
 }
 
 // ── 单轮流式调用（对标 Claude Code claude.ts 中的 API 流）─────────────────────
@@ -262,6 +264,7 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
 
     // maxTurns 检查（对标 Claude Code max_turns_reached）
     if (turnCount >= maxTurns) {
+      yield { type: 'messages_snapshot', messages: [...currentMessages] }
       yield { type: 'max_turns_reached', turnCount }
       return
     }
@@ -291,7 +294,8 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
     // ── 检查是否有工具调用 ──────────────────────────────────────────────────
     const toolUses = assistantContent.filter((c) => c.type === 'tool_use')
     if (toolUses.length === 0) {
-      // 无工具调用 → 对话结束
+      // 无工具调用 → 对话结束，先快照当前完整消息供下一轮使用
+      yield { type: 'messages_snapshot', messages: [...currentMessages] }
       yield { type: 'done' }
       return
     }

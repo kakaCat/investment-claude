@@ -28,7 +28,13 @@ export type AssistantMessage = {
   content: Array<TextContent | ToolUseContent>
 }
 
-export type Message = UserMessage | AssistantMessage
+export type CompactBoundaryMessage = {
+  type: 'compact_boundary'
+  trigger: 'auto' | 'manual' | 'partial'
+  preCompactTokenCount: number
+}
+
+export type Message = UserMessage | AssistantMessage | CompactBoundaryMessage
 
 // query.ts yield 的事件流类型
 export type StreamEvent =
@@ -43,3 +49,6 @@ export type StreamEvent =
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; tool_use_id: string; content: string }
   | { type: 'tool_denied'; tool_use_id: string; name: string }  // canUseTool 拒绝
+  | { type: 'messages_snapshot'; messages: Message[] }          // 每轮结束时的完整消息快照（用于下一轮 API 调用）
+  | { type: 'compact_start' }
+  | { type: 'compact_done'; savedTokens: number; summaryLength: number; newMessages: Message[] }
