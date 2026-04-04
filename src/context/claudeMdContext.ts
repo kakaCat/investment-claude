@@ -14,7 +14,7 @@ export async function loadClaudeMd(cwd: string): Promise<string | null> {
   const home = homedir()
   const parts: string[] = []
 
-  // 从 cwd 向上遍历到 home，收集所有 CLAUDE.md
+  // 从 cwd 向上遍历，直到 home 目录（不含），home 级别配置通过全局 ~/.claude/CLAUDE.md 读取
   let dir = cwd
   while (dir !== home && dir !== dirname(dir)) {
     const candidate = join(dir, 'CLAUDE.md')
