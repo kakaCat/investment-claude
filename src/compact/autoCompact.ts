@@ -4,6 +4,8 @@
 import { compactConversation, type CompactResult } from './index.js'
 import { trySessionMemoryCompaction } from './sessionMemory.js'
 import type { Message } from '../types/message.js'
+import { roughTokenCount } from '../sessionMemory/utils.js'
+export { roughTokenCount } from '../sessionMemory/utils.js'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -20,10 +22,6 @@ const MAX_CONSECUTIVE_FAILURES = 3
 let consecutiveFailures = 0
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-export function roughTokenCount(messages: Message[]): number {
-  return Math.floor(JSON.stringify(messages).length / 4)
-}
 
 export function getAutoCompactThreshold(): number {
   // Allow env override for easier testing

@@ -3,12 +3,12 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import {
-  formatCompactSummary,
   getCompactPrompt,
   getCompactUserSummaryMessage,
   getPartialCompactPrompt,
 } from './prompt.js'
 import type { CompactBoundaryMessage, Message, UserMessage } from '../types/message.js'
+import { roughTokenCount } from '../sessionMemory/utils.js'
 
 export type CompactResult = {
   newMessages: Message[]
@@ -17,10 +17,6 @@ export type CompactResult = {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function roughTokenCount(messages: Message[]): number {
-  return Math.floor(JSON.stringify(messages).length / 4)
-}
 
 function createBoundaryMessage(
   trigger: 'auto' | 'manual' | 'partial',
@@ -112,12 +108,11 @@ export async function compactConversation(
   const preTokens = roughTokenCount(messages)
   const promptText = getCompactPrompt(customInstructions)
   const rawSummary = await callCompactApi(messages, promptText, abortSignal)
-  const summary = formatCompactSummary(rawSummary)
 
   const trigger = isAutoCompact ? 'auto' : 'manual'
   const newMessages: Message[] = [
     createBoundaryMessage(trigger, preTokens),
-    createSummaryUserMessage(summary, suppressFollowUpQuestions),
+    createSummaryUserMessage(rawSummary, suppressFollowUpQuestions),
   ]
 
   const postTokens = roughTokenCount(newMessages)
@@ -125,7 +120,7 @@ export async function compactConversation(
   return {
     newMessages,
     savedTokens: Math.max(0, preTokens - postTokens),
-    summaryLength: summary.length,
+    summaryLength: rawSummary.length,
   }
 }
 
@@ -158,10 +153,9 @@ export async function partialCompactConversation(
   const preTokens = roughTokenCount(allMessages)
   const promptText = getPartialCompactPrompt(undefined, direction)
   const rawSummary = await callCompactApi(messagesToSummarize, promptText)
-  const summary = formatCompactSummary(rawSummary)
 
   const boundary = createBoundaryMessage('partial', preTokens)
-  const summaryMsg = createSummaryUserMessage(summary, false)
+  const summaryMsg = createSummaryUserMessage(rawSummary, false)
 
   const newMessages: Message[] =
     direction === 'up_to'
@@ -173,6 +167,6 @@ export async function partialCompactConversation(
   return {
     newMessages,
     savedTokens: Math.max(0, preTokens - postTokens),
-    summaryLength: summary.length,
+    summaryLength: rawSummary.length,
   }
 }
