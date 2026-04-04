@@ -15,7 +15,10 @@ import { Spinner } from '../components/Spinner.js'
 import type { SSHSession } from '../ssh/index.js'
 import type { SwarmConfig } from '../swarm/index.js'
 import type { ToolUseContext } from '../Tool.js'
+import type { Message } from '../types/message.js'
 import { createCronScheduler } from '../cron/cronScheduler.js'
+import { compactConversation } from '../compact/index.js'
+import { extractSessionMemoryIfNeeded } from '../sessionMemory/index.js'
 
 type Props = {
   // Stub props — 接口预留，当前不使用
@@ -60,6 +63,8 @@ export function REPL(_props: Props) {
   const [collectingPlanReason, setCollectingPlanReason] = useState(false)
   const [verifyRequest, setVerifyRequest] = useState<VerifyRequest | null>(null)
   const [collectingVerifyReason, setCollectingVerifyReason] = useState(false)
+  const [isCompacting, setIsCompacting] = useState(false)
+  const [lastCompactInfo, setLastCompactInfo] = useState<{ savedTokens: number } | null>(null)
 
   // AbortController — 用于 Ctrl+C 中止当前 query（对标 Claude Code interrupt()）
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -68,6 +73,9 @@ export function REPL(_props: Props) {
   // Refs for cron scheduler (stale-closure-safe)
   const handleSubmitRef = useRef<(input: string) => Promise<void>>(async () => {})
   const isLoadingRef = useRef(false)
+  // 对话消息 ref — 存储 query() 内部维护的正确顺序消息，用于下一轮 API 调用
+  // 不使用 history.messages，因为 history 是显示用的，工具调用时顺序与 API 要求不一致
+  const conversationRef = useRef<Message[]>([])
 
   // ── canUseTool 回调（传给 query()，在工具执行前弹出确认 UI）─────────────────
   // 对标 Claude Code canUseTool / wrappedCanUseTool
@@ -137,15 +145,42 @@ export function REPL(_props: Props) {
       // ── slash commands ──────────────────────────────────────────────────
       if (input === '/clear') {
         history.clearMessages()
+        conversationRef.current = []
         return
       }
       if (input === '/help') {
         history.appendUserMessage('/help')
         history.startAssistantMessage()
         history.appendStreamingDelta(
-          'Available commands:\n  /help  — show this message\n  /clear — clear the conversation',
+          'Available commands:\n  /help    — show this message\n  /clear   — clear the conversation\n  /compact — compress conversation to save tokens',
         )
         history.finalizeAssistantMessage()
+        return
+      }
+
+      if (input === '/compact') {
+        history.appendUserMessage('/compact')
+        setIsLoading(true)
+        isLoadingRef.current = true
+        history.startAssistantMessage()
+        try {
+          const result = await compactConversation(history.messages, {
+            suppressFollowUpQuestions: false,
+          })
+          history.replaceMessages(result.newMessages)
+          history.finalizeAssistantMessage()
+          history.appendUserMessage(
+            `[System: Conversation compacted. Saved ~${result.savedTokens.toLocaleString()} tokens]`,
+          )
+        } catch (err) {
+          history.finalizeAssistantMessage()
+          history.appendUserMessage(
+            `[System: Compact failed — ${err instanceof Error ? err.message : String(err)}]`,
+          )
+        } finally {
+          setIsLoading(false)
+          isLoadingRef.current = false
+        }
         return
       }
 
@@ -159,9 +194,11 @@ export function REPL(_props: Props) {
       abortControllerRef.current = abortController
 
       try {
-        // 注意：React state 异步，手动构造当前完整 messages
+        // 使用 conversationRef 而非 history.messages：
+        // history.messages 仅用于显示，工具调用时消息顺序与 API 要求不一致；
+        // conversationRef 存储 query() 内部 currentMessages 的快照，顺序始终正确。
         const currentMessages = [
-          ...history.messages,
+          ...conversationRef.current,
           { type: 'user' as const, content: [{ type: 'text' as const, text: input }] },
         ]
 
@@ -185,8 +222,14 @@ export function REPL(_props: Props) {
               // API 调用开始，UI 已在 isLoading 状态，无需额外操作
               break
 
+            case 'messages_snapshot':
+              // 保存 query() 内部的完整消息快照，供下一轮 API 调用使用
+              conversationRef.current = event.messages
+              break
+
             case 'done':
               history.finalizeAssistantMessage()
+              void extractSessionMemoryIfNeeded(history.messages)
               break
 
             case 'max_turns_reached':
@@ -197,6 +240,16 @@ export function REPL(_props: Props) {
             case 'error':
               history.finalizeAssistantMessage()
               console.error('Query error:', event.error)
+              break
+
+            case 'compact_start':
+              setIsCompacting(true)
+              break
+
+            case 'compact_done':
+              setIsCompacting(false)
+              setLastCompactInfo({ savedTokens: event.savedTokens })
+              history.replaceMessages(event.newMessages)
               break
 
             // ── 流式文本 ────────────────────────────────────────────────
@@ -310,9 +363,6 @@ export function REPL(_props: Props) {
       {/* 消息历史 */}
       <Messages
         messages={history.displayMessages}
-        streamingText={
-          history.displayMessages === history.messages ? history.streamingText : undefined
-        }
         tools={tools}
       />
 
@@ -321,6 +371,20 @@ export function REPL(_props: Props) {
         <Box paddingX={1}>
           <Text color="blue" bold>[PLAN MODE] </Text>
           <Text color="gray">Write tools disabled — call exit_plan_mode when ready</Text>
+        </Box>
+      )}
+
+      {/* Compact status */}
+      {isCompacting && (
+        <Box paddingX={1}>
+          <Text color="cyan">Compressing conversation…</Text>
+        </Box>
+      )}
+      {lastCompactInfo && !isCompacting && (
+        <Box paddingX={1}>
+          <Text color="green" dimColor>
+            Compacted — saved ~{lastCompactInfo.savedTokens.toLocaleString()} tokens
+          </Text>
         </Box>
       )}
 
