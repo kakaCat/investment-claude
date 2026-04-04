@@ -19,7 +19,18 @@ function getLockPath(): string {
   return join(getTaskDir(), '.lock')
 }
 
+const LOCK_OPTIONS = {
+  retries: { retries: 3, minTimeout: 50 },
+  stale: 10000,
+  realpath: false, // path is already absolute; avoids ENOENT if .lock is deleted externally
+} as const
+
+let _initialized = false
+
 export async function initTaskStore(): Promise<void> {
+  if (_initialized) return
+  _initialized = true
+
   const dir = getTaskDir()
   await mkdir(dir, { recursive: true })
 
@@ -28,8 +39,6 @@ export async function initTaskStore(): Promise<void> {
   } catch {
     // Already exists
   }
-
-  if (getAppState().tasks.size > 0) return
 
   let files: string[]
   try {
@@ -70,10 +79,7 @@ export async function createTaskFile(
 
   let release: (() => Promise<void>) | undefined
   try {
-    release = await lockfile.lock(lockPath, {
-      retries: { retries: 3, minTimeout: 50 },
-      stale: 10000,
-    })
+    release = await lockfile.lock(lockPath, LOCK_OPTIONS)
   } catch {
     throw new Error('Failed to acquire task lock, please retry')
   }
@@ -82,7 +88,11 @@ export async function createTaskFile(
     const id = context.getAppState().nextTaskId
     const task: Task = { id, ...data }
 
-    await writeFile(getTaskPath(id), JSON.stringify(task, null, 2), 'utf-8')
+    try {
+      await writeFile(getTaskPath(id), JSON.stringify(task, null, 2), 'utf-8')
+    } catch (err) {
+      throw new Error(`Failed to write task file: ${err instanceof Error ? err.message : String(err)}`)
+    }
 
     context.setAppState((prev) => ({
       ...prev,
@@ -108,10 +118,7 @@ export async function updateTaskFile(
 
   let release: (() => Promise<void>) | undefined
   try {
-    release = await lockfile.lock(lockPath, {
-      retries: { retries: 3, minTimeout: 50 },
-      stale: 10000,
-    })
+    release = await lockfile.lock(lockPath, LOCK_OPTIONS)
   } catch {
     throw new Error('Failed to acquire task lock, please retry')
   }
@@ -119,7 +126,11 @@ export async function updateTaskFile(
   try {
     const updated: Task = { ...existing, ...updates }
 
-    await writeFile(getTaskPath(id), JSON.stringify(updated, null, 2), 'utf-8')
+    try {
+      await writeFile(getTaskPath(id), JSON.stringify(updated, null, 2), 'utf-8')
+    } catch (err) {
+      throw new Error(`Failed to write task file: ${err instanceof Error ? err.message : String(err)}`)
+    }
 
     context.setAppState((prev) => ({
       ...prev,
