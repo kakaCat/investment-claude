@@ -11,8 +11,8 @@ function trunc(s: string): string {
 }
 
 // Per-tool start timestamps for duration computation.
-// Tool calls are sequential (not parallel) so a single slot per tool name suffices.
-const toolStartTs = new Map<string, number>()
+// Tool calls may be parallel, so we use a stack per tool name.
+const toolStartTs = new Map<string, number[]>()
 
 export function initObservability(): void {
   const sessionId = getSessionId()
@@ -54,7 +54,9 @@ export function initObservability(): void {
   registerFunctionHook('PreToolUse', async (input) => {
     if (input.hook_event_name !== 'PreToolUse') return
     const ts = Date.now()
-    toolStartTs.set(input.tool_name, ts)
+    const stack = toolStartTs.get(input.tool_name) ?? []
+    stack.push(ts)
+    toolStartTs.set(input.tool_name, stack)
     await appendEvent({
       event: 'tool_call',
       tool: input.tool_name,
@@ -67,11 +69,13 @@ export function initObservability(): void {
   registerFunctionHook('PostToolUse', async (input) => {
     if (input.hook_event_name !== 'PostToolUse') return
     const ts = Date.now()
-    const startTs = toolStartTs.get(input.tool_name) ?? ts
-    toolStartTs.delete(input.tool_name)
+    const stack = toolStartTs.get(input.tool_name) ?? []
+    const startTs = stack.shift() ?? ts
+    if (stack.length === 0) toolStartTs.delete(input.tool_name)
     await appendEvent({
       event: 'tool_result',
       tool: input.tool_name,
+      input: trunc(JSON.stringify(input.tool_input)),
       result: trunc(input.tool_response),
       duration_ms: ts - startTs,
       ts,
@@ -82,11 +86,13 @@ export function initObservability(): void {
   registerFunctionHook('PostToolUseFailure', async (input) => {
     if (input.hook_event_name !== 'PostToolUseFailure') return
     const ts = Date.now()
-    const startTs = toolStartTs.get(input.tool_name) ?? ts
-    toolStartTs.delete(input.tool_name)
+    const stack = toolStartTs.get(input.tool_name) ?? []
+    const startTs = stack.shift() ?? ts
+    if (stack.length === 0) toolStartTs.delete(input.tool_name)
     await appendEvent({
       event: 'tool_error',
       tool: input.tool_name,
+      input: trunc(JSON.stringify(input.tool_input)),
       error: trunc(input.tool_error),
       duration_ms: ts - startTs,
       ts,
