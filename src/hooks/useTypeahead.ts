@@ -106,6 +106,11 @@ export function handleTypeaheadKeyEvent({
   const selectedItem = suggestions.items[suggestions.selectedIndex]
 
   if (key.tab && selectedItem) {
+    // 设置 dismissedForRef 防止 useEffect 在 value 更新后重新弹出下拉列表
+    const filledValue = selectedItem.argumentHint
+      ? `${selectedItem.command} `
+      : selectedItem.command
+    dismissedForRef.current = filledValue
     applySelection(selectedItem, false, onInputChange, onSubmit, recordUsageForItem)
     setSuggestions(createEmptySuggestionsState())
     return true

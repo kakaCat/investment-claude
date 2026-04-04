@@ -12,12 +12,10 @@ type Props = {
   argumentHint?: string
 }
 
-function getSourceIcon(source: CommandItem['source']): { color: 'gray' | 'magenta' | 'blue'; icon: string } {
+function getSourceIcon(source: CommandItem['source']): { color: 'gray' | 'magenta'; icon: string } {
   switch (source) {
     case 'skill-user':
       return { color: 'magenta', icon: '◆' }
-    case 'skill-project':
-      return { color: 'blue', icon: '◆' }
     case 'builtin':
     default:
       return { color: 'gray', icon: '/' }

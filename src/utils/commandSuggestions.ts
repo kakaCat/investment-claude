@@ -4,7 +4,7 @@ import type { IFuseOptions } from 'fuse.js'
 import type { Skill } from '../skills/index.js'
 import type { SkillUsageRecord } from './skillUsage.js'
 
-export type CommandSource = 'builtin' | 'skill-user' | 'skill-project'
+export type CommandSource = 'builtin' | 'skill-user'
 
 export type CommandItem = {
   id: string
