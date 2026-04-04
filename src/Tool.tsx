@@ -39,6 +39,8 @@ export type ToolUseContext = {
   exitPlanMode?: (plan: string) => Promise<string>
   /** Present execution summary to user, wait for verification */
   verifyExecution?: (summary: string) => Promise<string>
+  /** Exit the session gracefully (fires SessionEnd hook then process.exit) */
+  onExit?: () => Promise<void>
 
   // ── 以下字段对标 Claude Code，暂未实现 ─────────────────────────────────────
 

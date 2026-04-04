@@ -23,6 +23,7 @@ import { compactConversation, partialCompactConversation } from '../compact/inde
 import { initSessionMemory } from '../sessionMemory/index.js'
 import { initObservability } from '../observability/index.js'
 import { getWorkDir, getSessionId, getWorkspaceDir } from '../bootstrap/state.js'
+import { listSkills, type Skill } from '../skills/index.js'
 
 type Props = {
   // Stub props — 接口预留，当前不使用
@@ -74,6 +75,7 @@ export function REPL(_props: Props) {
   const [lastCompactInfo, setLastCompactInfo] = useState<{ savedTokens: number } | null>(null)
   const [isPartialSelectMode, setIsPartialSelectMode] = useState(false)
   const [partialSelectedIndex, setPartialSelectedIndex] = useState(0)
+  const [skills, setSkills] = useState<Skill[]>([])
   const sessionIdRef = useRef<string>(randomUUID())
 
   // AbortController — 用于 Ctrl+C 中止当前 query（对标 Claude Code interrupt()）
@@ -108,6 +110,16 @@ export function REPL(_props: Props) {
       }),
     [],
   )
+
+  const doExit = useCallback(async () => {
+    await executeHooks({
+      hook_event_name: 'SessionEnd',
+      exit_reason: 'exit_command',
+      session_id: sessionIdRef.current,
+      cwd: process.cwd(),
+    })
+    process.exit(0)
+  }, [])
 
   const enterPlanMode = useCallback(() => {
     setIsPlanMode(true)
@@ -173,11 +185,16 @@ export function REPL(_props: Props) {
         conversationRef.current = []
         return
       }
+      if (input === '/exit') {
+        await doExit()
+        return
+      }
+
       if (input === '/help') {
         history.appendUserMessage('/help')
         history.startAssistantMessage()
         history.appendStreamingDelta(
-          'Available commands:\n  /help    — show this message\n  /clear   — clear the conversation\n  /compact — compress conversation to save tokens',
+          'Available commands:\n  /help    — show this message\n  /clear   — clear the conversation\n  /compact — compress conversation to save tokens\n  /exit    — exit the session',
         )
         history.finalizeAssistantMessage()
         return
@@ -260,6 +277,7 @@ export function REPL(_props: Props) {
           enterPlanMode,
           exitPlanMode,
           verifyExecution,
+          onExit: doExit,
           abortSignal: abortController.signal,
           sessionId: sessionIdRef.current,
         })
@@ -329,7 +347,7 @@ export function REPL(_props: Props) {
         abortControllerRef.current = null
       }
     },
-    [tools, history, canUseTool, askUser, enterPlanMode, exitPlanMode, verifyExecution],
+    [tools, history, canUseTool, askUser, doExit, enterPlanMode, exitPlanMode, verifyExecution],
   )
 
   // Keep ref in sync with latest handleSubmit (stale-closure-safe for cron scheduler)
@@ -341,6 +359,9 @@ export function REPL(_props: Props) {
       initSessionMemory()
       initObservability()
     }
+
+    // 加载 skill 列表，供命令面板显示
+    void listSkills(process.cwd()).then(setSkills).catch(() => {})
 
     void executeHooks({
       hook_event_name: 'SessionStart',
@@ -626,7 +647,9 @@ export function REPL(_props: Props) {
       {isLoading && !permissionRequest && !askUserRequest && !planApprovalRequest && !verifyRequest && <Spinner />}
 
       {/* 输入框 */}
-      {!isLoading && !askUserRequest && !planApprovalRequest && !verifyRequest && <PromptInput onSubmit={handleSubmit} isLoading={isLoading} />}
+      {!isLoading && !askUserRequest && !planApprovalRequest && !verifyRequest && (
+        <PromptInput onSubmit={handleSubmit} isLoading={isLoading} onExit={doExit} skills={skills} />
+      )}
     </Box>
   )
 }

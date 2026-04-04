@@ -39,6 +39,7 @@ export type QueryParams = {
   enterPlanMode?: ToolUseContext['enterPlanMode']
   exitPlanMode?: ToolUseContext['exitPlanMode']
   verifyExecution?: ToolUseContext['verifyExecution']
+  onExit?: ToolUseContext['onExit']
   sessionId?: string
 }
 
@@ -289,6 +290,7 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
     enterPlanMode,
     exitPlanMode,
     verifyExecution,
+    onExit,
     sessionId: paramsSessionId,
   } = params
 
@@ -307,6 +309,7 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
     enterPlanMode,
     exitPlanMode,
     verifyExecution,
+    onExit,
   }
 
   const client = new Anthropic({
