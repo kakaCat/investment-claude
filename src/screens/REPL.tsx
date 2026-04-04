@@ -21,6 +21,7 @@ import type { Message } from '../types/message.js'
 import { createCronScheduler } from '../cron/cronScheduler.js'
 import { compactConversation, partialCompactConversation } from '../compact/index.js'
 import { initSessionMemory } from '../sessionMemory/index.js'
+import { initObservability } from '../observability/index.js'
 import { getWorkDir, getSessionId, getWorkspaceDir } from '../bootstrap/state.js'
 
 type Props = {
@@ -338,6 +339,7 @@ export function REPL(_props: Props) {
     if (!smInitializedRef.current) {
       smInitializedRef.current = true
       initSessionMemory()
+      initObservability()
     }
 
     void executeHooks({
