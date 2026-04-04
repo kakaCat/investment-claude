@@ -9,6 +9,7 @@ import { getAppState, setAppState } from './state/AppState.js'
 import { buildTodoReminderIfNeeded } from './state/todoReminder.js'
 import { findTool } from './tools/index.js'
 import { initTaskStore } from './tasks/taskFileStore.js'
+import { autoCompactIfNeeded } from './compact/autoCompact.js'
 
 // ── 类型 ──────────────────────────────────────────────────────────────────────
 
@@ -257,6 +258,19 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
 
   // ── 主循环 ────────────────────────────────────────────────────────────────
   while (true) {
+    // ── Auto compact check ──────────────────────────────────────────────
+    const compactResult = await autoCompactIfNeeded(currentMessages)
+    if (compactResult.wasCompacted && compactResult.result) {
+      currentMessages = compactResult.result.newMessages
+      yield { type: 'compact_start' }
+      yield {
+        type: 'compact_done',
+        savedTokens: compactResult.result.savedTokens,
+        summaryLength: compactResult.result.summaryLength,
+        newMessages: compactResult.result.newMessages,
+      }
+    }
+
     // 中止检查
     if (abortSignal?.aborted) {
       return
