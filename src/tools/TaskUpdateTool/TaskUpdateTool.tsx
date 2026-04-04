@@ -2,6 +2,7 @@ import React from 'react'
 import { buildTool } from '../../Tool.js'
 import { DESCRIPTION, SEARCH_HINT } from './prompt.js'
 import { TaskUpdateToolUseUI, TaskUpdateToolResultUI } from './UI.js'
+import { updateTaskFile } from '../../tasks/taskFileStore.js'
 import type { Task, TaskStatus } from '../../tasks/types.js'
 
 export const TaskUpdateTool = buildTool({
@@ -30,28 +31,19 @@ export const TaskUpdateTool = buildTool({
       output?: string
       description?: string
     }
-    const updates: Partial<Omit<Task, 'id' | 'createdAt'>> = {}
+    const now = new Date().toISOString()
+    const updates: Partial<Omit<Task, 'id'>> = { updatedAt: now }
     if (status !== undefined) updates.status = status
     if (owner !== undefined) updates.owner = owner
     if (output !== undefined) updates.output = output
     if (description !== undefined) updates.description = description
 
-    let updatedTask: Task | undefined
-    context.setAppState((prev) => {
-      const task = prev.tasks.get(id)
-      if (!task) return prev
-      const updated: Task = {
-        ...task,
-        ...updates,
-        updatedAt: new Date().toISOString(),
-      }
-      updatedTask = updated
-      return {
-        ...prev,
-        tasks: new Map(prev.tasks).set(id, updated),
-      }
-    })
-    if (!updatedTask) return `ERROR: Task ${id} not found.`
-    return JSON.stringify(updatedTask)
+    try {
+      const updated = await updateTaskFile(id, updates, context)
+      if (!updated) return `ERROR: Task ${id} not found.`
+      return JSON.stringify(updated)
+    } catch (err) {
+      return `ERROR: ${err instanceof Error ? err.message : String(err)}`
+    }
   },
 })

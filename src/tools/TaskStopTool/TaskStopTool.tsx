@@ -2,7 +2,7 @@ import React from 'react'
 import { buildTool } from '../../Tool.js'
 import { DESCRIPTION, SEARCH_HINT } from './prompt.js'
 import { TaskStopToolUseUI, TaskStopToolResultUI } from './UI.js'
-import type { Task } from '../../tasks/types.js'
+import { updateTaskFile } from '../../tasks/taskFileStore.js'
 
 export const TaskStopTool = buildTool({
   name: 'task_stop',
@@ -26,22 +26,11 @@ export const TaskStopTool = buildTool({
       return `ERROR: Task ${id} is already ${task.status}.`
     }
 
-    context.setAppState((prev) => {
-      const t = prev.tasks.get(id)
-      if (!t) return prev
-
-      const stoppedTask: Task = {
-        ...t,
-        status: 'stopped',
-        updatedAt: new Date().toISOString(),
-      }
-
-      return {
-        ...prev,
-        tasks: new Map(prev.tasks).set(id, stoppedTask),
-      }
-    })
-
-    return 'Task stopped.'
+    try {
+      await updateTaskFile(id, { status: 'stopped', updatedAt: new Date().toISOString() }, context)
+      return 'Task stopped.'
+    } catch (err) {
+      return `ERROR: ${err instanceof Error ? err.message : String(err)}`
+    }
   },
 })
