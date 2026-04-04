@@ -33,6 +33,11 @@ type ToolHookFields = {
   tool_input: unknown
 }
 
+type TaskHookFields = {
+  task_id: string
+  content: string
+}
+
 type CompactTrigger = 'auto' | 'manual' | 'partial'
 
 export type PreToolUseHookInput = BaseHookInput<'PreToolUse'> & ToolHookFields
@@ -90,15 +95,9 @@ export type TeammateIdleHookInput = BaseHookInput<'TeammateIdle'> & {
   teammate_name: string
 }
 
-export type TaskCreatedHookInput = BaseHookInput<'TaskCreated'> & {
-  task_id: string
-  content: string
-}
+export type TaskCreatedHookInput = BaseHookInput<'TaskCreated'> & TaskHookFields
 
-export type TaskCompletedHookInput = BaseHookInput<'TaskCompleted'> & {
-  task_id: string
-  content: string
-}
+export type TaskCompletedHookInput = BaseHookInput<'TaskCompleted'> & TaskHookFields
 
 export type PermissionRequestHookInput = BaseHookInput<'PermissionRequest'> & ToolHookFields
 
@@ -199,6 +198,7 @@ export type HttpHook = {
 export type HookCommand = CommandHook | FunctionHook | PromptHook | HttpHook
 
 export type HookMatcher = {
+  /** 工具名匹配 pattern（字符串前缀匹配）。缺省或空字符串表示匹配所有。*/
   matcher?: string
   hooks: HookCommand[]
 }
@@ -206,7 +206,7 @@ export type HookMatcher = {
 export type HooksSettings = Partial<Record<HookEvent, HookMatcher[]>>
 
 export type HookResult = {
-  outcome: 'success' | 'blocking' | 'non_blocking_error' | 'cancelled'
+  outcome: 'success' | 'blocking' | 'nonBlockingError' | 'cancelled'
   permissionDecision?: 'allow' | 'deny' | 'ask'
   updatedInput?: Record<string, unknown>
   preventContinuation?: boolean
