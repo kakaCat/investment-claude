@@ -1,10 +1,12 @@
 // 主屏幕 — 简化版，对标 Claude Code src/screens/REPL.tsx
 // 目标 ≤300 行。职责：驱动 query 循环，处理 StreamEvent，协调 UI
 
+import { randomUUID } from 'crypto'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { query, type CanUseTool } from '../query.js'
 import { getSystemPrompt } from '../constants/prompts.js'
+import { executeHooks } from '../hooks/index.js'
 import { useMergedTools } from '../hooks/useMergedTools.js'
 import { getAllTools } from '../tools/index.js'
 import { getPluginTools } from '../plugins/index.js'
@@ -67,6 +69,7 @@ export function REPL(_props: Props) {
   const [lastCompactInfo, setLastCompactInfo] = useState<{ savedTokens: number } | null>(null)
   const [isPartialSelectMode, setIsPartialSelectMode] = useState(false)
   const [partialSelectedIndex, setPartialSelectedIndex] = useState(0)
+  const sessionIdRef = useRef<string>(randomUUID())
 
   // AbortController — 用于 Ctrl+C 中止当前 query（对标 Claude Code interrupt()）
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -146,6 +149,19 @@ export function REPL(_props: Props) {
     async (input: string) => {
       // ── slash commands ──────────────────────────────────────────────────
       if (input === '/clear') {
+        void executeHooks({
+          hook_event_name: 'SessionEnd',
+          exit_reason: 'clear',
+          session_id: sessionIdRef.current,
+          cwd: process.cwd(),
+        })
+        sessionIdRef.current = randomUUID()
+        void executeHooks({
+          hook_event_name: 'SessionStart',
+          source: 'clear',
+          session_id: sessionIdRef.current,
+          cwd: process.cwd(),
+        })
         history.clearMessages()
         conversationRef.current = []
         return
@@ -196,6 +212,13 @@ export function REPL(_props: Props) {
           return
         }
 
+      await executeHooks({
+        hook_event_name: 'UserPromptSubmit',
+        prompt: input,
+        session_id: sessionIdRef.current,
+        cwd: process.cwd(),
+      })
+
       history.appendUserMessage(input)
       setIsLoading(true)
       isLoadingRef.current = true
@@ -225,6 +248,7 @@ export function REPL(_props: Props) {
           exitPlanMode,
           verifyExecution,
           abortSignal: abortController.signal,
+          sessionId: sessionIdRef.current,
         })
 
         for await (const event of gen) {
@@ -298,6 +322,24 @@ export function REPL(_props: Props) {
 
   // Keep ref in sync with latest handleSubmit (stale-closure-safe for cron scheduler)
   handleSubmitRef.current = handleSubmit
+
+  useEffect(() => {
+    void executeHooks({
+      hook_event_name: 'SessionStart',
+      source: 'startup',
+      session_id: sessionIdRef.current,
+      cwd: process.cwd(),
+    })
+
+    return () => {
+      void executeHooks({
+        hook_event_name: 'SessionEnd',
+        session_id: sessionIdRef.current,
+        cwd: process.cwd(),
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Cron scheduler ────────────────────────────────────────────────────────
   useEffect(() => {
