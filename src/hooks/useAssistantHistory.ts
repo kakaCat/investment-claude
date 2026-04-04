@@ -7,7 +7,6 @@ import type { Message, AssistantMessage } from '../types/message.js'
 export type UseAssistantHistoryResult = {
   messages: Message[]
   displayMessages: Message[]
-  streamingText: string
   appendUserMessage: (text: string) => void
   startAssistantMessage: () => void
   appendStreamingDelta: (delta: string) => void
@@ -15,11 +14,11 @@ export type UseAssistantHistoryResult = {
   finalizeAssistantMessage: () => void
   appendToolResult: (tool_use_id: string, content: string) => void
   clearMessages: () => void
+  replaceMessages: (messages: Message[]) => void
 }
 
 export function useAssistantHistory(): UseAssistantHistoryResult {
   const [messages, setMessages] = useState<Message[]>([])
-  const [streamingText, setStreamingText] = useState('')
   // 临时存储正在流式接收的 assistant message 内容
   const [pendingAssistantContent, setPendingAssistantContent] = useState<
     AssistantMessage['content']
@@ -38,12 +37,10 @@ export function useAssistantHistory(): UseAssistantHistoryResult {
   }, [])
 
   const startAssistantMessage = useCallback(() => {
-    setStreamingText('')
     setPendingAssistantContent([])
   }, [])
 
   const appendStreamingDelta = useCallback((delta: string) => {
-    setStreamingText((prev) => prev + delta)
     setPendingAssistantContent((prev) => {
       const last = prev[prev.length - 1]
       if (last && last.type === 'text') {
@@ -61,7 +58,6 @@ export function useAssistantHistory(): UseAssistantHistoryResult {
   }, [])
 
   const finalizeAssistantMessage = useCallback(() => {
-    setStreamingText('')
     setPendingAssistantContent((content) => {
       if (content.length > 0) {
         setMessages((prev) => [
@@ -88,14 +84,17 @@ export function useAssistantHistory(): UseAssistantHistoryResult {
 
   const clearMessages = useCallback(() => {
     setMessages([])
-    setStreamingText('')
+    setPendingAssistantContent([])
+  }, [])
+
+  const replaceMessages = useCallback((newMessages: Message[]) => {
+    setMessages(newMessages)
     setPendingAssistantContent([])
   }, [])
 
   return {
     messages,
     displayMessages,
-    streamingText,
     appendUserMessage,
     startAssistantMessage,
     appendStreamingDelta,
@@ -103,5 +102,6 @@ export function useAssistantHistory(): UseAssistantHistoryResult {
     finalizeAssistantMessage,
     appendToolResult,
     clearMessages,
+    replaceMessages,
   }
 }
