@@ -29,7 +29,7 @@ export function initSystemPrompt(): void {
   // 动态段（首次加载后缓存，/clear 时重置）
   registerSection('env_info', (ctx) => loadEnvInfo(ctx))
   registerSection('workspace', (ctx) => loadWorkspaceSection(ctx))
-  registerSection('git_status', (ctx) => loadGitStatus(ctx.cwd))
+  registerVolatileSection('git_status', (ctx) => loadGitStatus(ctx.cwd))
   registerSection('claude_md', (ctx) => loadClaudeMd(ctx.cwd))
   registerSection('memory', (ctx) => loadMemory(ctx.cwd))
 
