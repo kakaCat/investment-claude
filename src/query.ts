@@ -8,6 +8,7 @@ import type { Message, StreamEvent, UserMessage, AssistantMessage } from './type
 import { getAppState, setAppState } from './state/AppState.js'
 import { buildTodoReminderIfNeeded } from './state/todoReminder.js'
 import { findTool } from './tools/index.js'
+import { initTaskStore } from './tasks/taskFileStore.js'
 
 // ── 类型 ──────────────────────────────────────────────────────────────────────
 
@@ -227,6 +228,8 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
     exitPlanMode,
     verifyExecution,
   } = params
+
+  await initTaskStore()
 
   // ToolUseContext 在整个 query 生命周期内复用
   const toolUseContext: ToolUseContext = {
