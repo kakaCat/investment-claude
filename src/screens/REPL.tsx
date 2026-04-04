@@ -17,7 +17,7 @@ import type { SwarmConfig } from '../swarm/index.js'
 import type { ToolUseContext } from '../Tool.js'
 import type { Message } from '../types/message.js'
 import { createCronScheduler } from '../cron/cronScheduler.js'
-import { compactConversation } from '../compact/index.js'
+import { compactConversation, partialCompactConversation } from '../compact/index.js'
 import { extractSessionMemoryIfNeeded } from '../sessionMemory/index.js'
 
 type Props = {
@@ -65,6 +65,8 @@ export function REPL(_props: Props) {
   const [collectingVerifyReason, setCollectingVerifyReason] = useState(false)
   const [isCompacting, setIsCompacting] = useState(false)
   const [lastCompactInfo, setLastCompactInfo] = useState<{ savedTokens: number } | null>(null)
+  const [isPartialSelectMode, setIsPartialSelectMode] = useState(false)
+  const [partialSelectedIndex, setPartialSelectedIndex] = useState(0)
 
   // AbortController — 用于 Ctrl+C 中止当前 query（对标 Claude Code interrupt()）
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -184,6 +186,16 @@ export function REPL(_props: Props) {
         return
       }
 
+      if (input === '/compact partial') {
+          if (history.messages.length < 2) {
+            history.appendUserMessage('[System: Need at least 2 messages for partial compact]')
+            return
+          }
+          setPartialSelectedIndex(Math.floor(history.messages.length / 2))
+          setIsPartialSelectMode(true)
+          return
+        }
+
       history.appendUserMessage(input)
       setIsLoading(true)
       isLoadingRef.current = true
@@ -300,6 +312,69 @@ export function REPL(_props: Props) {
   // ── 键盘输入处理 ──────────────────────────────────────────────────────────
   useInput(
     (input, key) => {
+      if (isPartialSelectMode) {
+          if (key.upArrow || input === 'k') {
+            setPartialSelectedIndex((i) => Math.max(0, i - 1))
+          } else if (key.downArrow || input === 'j') {
+            setPartialSelectedIndex((i) =>
+              Math.min(history.displayMessages.length - 1, i + 1),
+            )
+          } else if (input === 'f') {
+            // compact from selected message
+            setIsPartialSelectMode(false)
+            void (async () => {
+              setIsLoading(true)
+              isLoadingRef.current = true
+              try {
+                const result = await partialCompactConversation(
+                  history.messages,
+                  partialSelectedIndex,
+                  'from',
+                )
+                history.replaceMessages(result.newMessages)
+                history.appendUserMessage(
+                  `[System: Partial compact (from). Saved ~${result.savedTokens.toLocaleString()} tokens]`,
+                )
+              } catch (err) {
+                history.appendUserMessage(
+                  `[System: Partial compact failed — ${err instanceof Error ? err.message : String(err)}]`,
+                )
+              } finally {
+                setIsLoading(false)
+                isLoadingRef.current = false
+              }
+            })()
+          } else if (input === 'u') {
+            // compact up to selected message
+            setIsPartialSelectMode(false)
+            void (async () => {
+              setIsLoading(true)
+              isLoadingRef.current = true
+              try {
+                const result = await partialCompactConversation(
+                  history.messages,
+                  partialSelectedIndex,
+                  'up_to',
+                )
+                history.replaceMessages(result.newMessages)
+                history.appendUserMessage(
+                  `[System: Partial compact (up to). Saved ~${result.savedTokens.toLocaleString()} tokens]`,
+                )
+              } catch (err) {
+                history.appendUserMessage(
+                  `[System: Partial compact failed — ${err instanceof Error ? err.message : String(err)}]`,
+                )
+              } finally {
+                setIsLoading(false)
+                isLoadingRef.current = false
+              }
+            })()
+          } else if (key.escape) {
+            setIsPartialSelectMode(false)
+          }
+          return
+        }
+
       if (askUserRequest) {
         if (key.upArrow) {
           setSelectedIndex((i) => Math.max(0, i - 1))
@@ -373,6 +448,15 @@ export function REPL(_props: Props) {
           <Text color="gray">Write tools disabled — call exit_plan_mode when ready</Text>
         </Box>
       )}
+
+      {/* Partial compact selection mode */}
+        {isPartialSelectMode && (
+          <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1}>
+            <Text color="cyan" bold>Select pivot message for partial compact</Text>
+            <Text color="gray">↑/k ↓/j navigate  [f] compact from here  [u] compact up to here  [Esc] cancel</Text>
+            <Text color="gray">Selected: message {partialSelectedIndex + 1} of {history.displayMessages.length}</Text>
+          </Box>
+        )}
 
       {/* Compact status */}
       {isCompacting && (
