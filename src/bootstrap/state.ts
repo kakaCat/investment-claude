@@ -11,14 +11,18 @@ export type State = {
   workDir: string       // 当前工作目录
   taskDir: string       // 任务存储目录 ~/.pi/tasks/
   sessionId: string
+  workspaceDir: string  // .pi/sessions/{sessionId}/workspace/
 }
+
+const _sessionId = randomUUID()
 
 const state: State = {
   originalCwd: process.cwd(),
   projectRoot: process.cwd(),
   workDir: process.cwd(),
   taskDir: join(homedir(), '.pi', 'tasks'),
-  sessionId: randomUUID(),
+  sessionId: _sessionId,
+  workspaceDir: join(process.cwd(), '.pi', 'sessions', _sessionId, 'workspace'),
 }
 
 export function getOriginalCwd(): string {
@@ -39,4 +43,8 @@ export function getTaskDir(): string {
 
 export function getSessionId(): string {
   return state.sessionId
+}
+
+export function getWorkspaceDir(): string {
+  return state.workspaceDir
 }
