@@ -53,10 +53,10 @@ type VerifyRequest = {
 
 const WRITE_TOOLS = new Set(['write_file', 'edit_file', 'bash'])
 
-export function REPL(_props: Props) {
-  // 初始化系统提示词注册表（只执行一次）
-  initSystemPrompt()
+// 初始化系统提示词注册表（模块加载时执行一次）
+initSystemPrompt()
 
+export function REPL(_props: Props) {
   const tools = useMergedTools()
   const allTools = useMemo(() => getAllTools(getPluginTools()), [])
   const history = useAssistantHistory()
