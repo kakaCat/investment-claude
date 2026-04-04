@@ -383,6 +383,7 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
         stop_reason: 'done',
         session_id: sessionId,
         cwd: toolUseContext.cwd,
+        messages: currentMessages,
       })
       yield { type: 'done' }
       return

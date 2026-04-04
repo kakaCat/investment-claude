@@ -20,7 +20,7 @@ import type { ToolUseContext } from '../Tool.js'
 import type { Message } from '../types/message.js'
 import { createCronScheduler } from '../cron/cronScheduler.js'
 import { compactConversation, partialCompactConversation } from '../compact/index.js'
-import { extractSessionMemoryIfNeeded } from '../sessionMemory/index.js'
+import { initSessionMemory } from '../sessionMemory/index.js'
 
 type Props = {
   // Stub props — 接口预留，当前不使用
@@ -81,6 +81,7 @@ export function REPL(_props: Props) {
   // 对话消息 ref — 存储 query() 内部维护的正确顺序消息，用于下一轮 API 调用
   // 不使用 history.messages，因为 history 是显示用的，工具调用时顺序与 API 要求不一致
   const conversationRef = useRef<Message[]>([])
+  const smInitializedRef = useRef(false)
 
   // ── canUseTool 回调（传给 query()，在工具执行前弹出确认 UI）─────────────────
   // 对标 Claude Code canUseTool / wrappedCanUseTool
@@ -184,6 +185,7 @@ export function REPL(_props: Props) {
         try {
           const result = await compactConversation(history.messages, {
             suppressFollowUpQuestions: false,
+            sessionId: sessionIdRef.current,
           })
           history.replaceMessages(result.newMessages)
           history.finalizeAssistantMessage()
@@ -265,7 +267,6 @@ export function REPL(_props: Props) {
 
             case 'done':
               history.finalizeAssistantMessage()
-              void extractSessionMemoryIfNeeded(history.messages)
               break
 
             case 'max_turns_reached':
@@ -324,6 +325,11 @@ export function REPL(_props: Props) {
   handleSubmitRef.current = handleSubmit
 
   useEffect(() => {
+    if (!smInitializedRef.current) {
+      smInitializedRef.current = true
+      initSessionMemory()
+    }
+
     void executeHooks({
       hook_event_name: 'SessionStart',
       source: 'startup',
@@ -372,6 +378,7 @@ export function REPL(_props: Props) {
                   history.messages,
                   partialSelectedIndex,
                   'from',
+                  { sessionId: sessionIdRef.current },
                 )
                 history.replaceMessages(result.newMessages)
                 history.appendUserMessage(
@@ -397,6 +404,7 @@ export function REPL(_props: Props) {
                   history.messages,
                   partialSelectedIndex,
                   'up_to',
+                  { sessionId: sessionIdRef.current },
                 )
                 history.replaceMessages(result.newMessages)
                 history.appendUserMessage(

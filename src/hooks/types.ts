@@ -1,6 +1,8 @@
 // Hook 框架类型系统 — 对标 Claude Code 的 hooks event/settings/result 类型
 // 仅包含共享类型声明与事件常量，供 Hook 注册、匹配、执行与结果聚合使用。
 
+import type { Message } from '../types/message.js'
+
 export const HOOK_EVENTS = [
   'PreToolUse', 'PostToolUse', 'PostToolUseFailure',
   'Stop', 'StopFailure',
@@ -52,6 +54,7 @@ export type PostToolUseFailureHookInput = BaseHookInput<'PostToolUseFailure'> & 
 
 export type StopHookInput = BaseHookInput<'Stop'> & {
   stop_reason: 'done' | 'max_turns_reached'
+  messages?: Message[]
 }
 
 export type StopFailureHookInput = BaseHookInput<'StopFailure'> & {

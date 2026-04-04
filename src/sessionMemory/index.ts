@@ -5,6 +5,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { mkdir, writeFile } from 'fs/promises'
+import { registerFunctionHook } from '../hooks/index.js'
 import { getSessionMemoryDir, getSessionMemoryPath } from './path.js'
 import {
   buildSessionMemoryUpdatePrompt,
@@ -128,8 +129,11 @@ async function runSmExtraction(
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function initSessionMemory(): void {
-  // Intentionally empty for now — state lives in utils.ts module-level vars.
-  // Called during REPL init to signal SM is active.
+  registerFunctionHook('Stop', async (input) => {
+    if (input.hook_event_name === 'Stop' && input.messages) {
+      await extractSessionMemoryIfNeeded(input.messages)
+    }
+  })
 }
 
 /**
