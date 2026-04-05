@@ -22,7 +22,12 @@ import { createCronScheduler } from '../cron/cronScheduler.js'
 import { compactConversation, partialCompactConversation } from '../compact/index.js'
 import { initSessionMemory } from '../sessionMemory/index.js'
 import { initObservability } from '../observability/index.js'
+import { getLogFilePath, getHtmlFilePath } from '../observability/logger.js'
+import { generateReport } from '../observability/htmlReport.js'
 import { getWorkDir, getSessionId, getWorkspaceDir } from '../bootstrap/state.js'
+import { addToHistory } from '../history.js'
+import { logForDebugging } from '../utils/debug.js'
+import { logForDiagnosticsNoPII } from '../utils/diagLogs.js'
 import { listSkills, type Skill } from '../skills/index.js'
 
 type Props = {
@@ -58,6 +63,31 @@ const WRITE_TOOLS = new Set(['write_file', 'edit_file', 'bash'])
 // 初始化系统提示词注册表（模块加载时执行一次）
 initSystemPrompt()
 
+export function emitSessionEndLog(reason: 'exit_command' | 'clear'): void {
+  logForDebugging(`session ended reason=${reason}`)
+  logForDiagnosticsNoPII('info', 'session_end', { reason })
+}
+
+export function emitCompactTriggeredLog(): void {
+  logForDebugging('compact triggered')
+  logForDiagnosticsNoPII('info', 'compact_triggered')
+}
+
+export function maybeLogStreamingIdleWarning(
+  now: number,
+  streamStartTs: number,
+  streamIdleWarningFired: boolean,
+): boolean {
+  if (!streamIdleWarningFired && now - streamStartTs > 30_000) {
+    const duration_ms = now - streamStartTs
+    logForDebugging(`streaming idle ${duration_ms}ms`, { level: 'warn' })
+    logForDiagnosticsNoPII('warn', 'streaming_idle_warning', { duration_ms })
+    return true
+  }
+
+  return streamIdleWarningFired
+}
+
 export function REPL(_props: Props) {
   const tools = useMergedTools()
   const allTools = useMemo(() => getAllTools(getPluginTools()), [])
@@ -89,6 +119,8 @@ export function REPL(_props: Props) {
   // 不使用 history.messages，因为 history 是显示用的，工具调用时顺序与 API 要求不一致
   const conversationRef = useRef<Message[]>([])
   const smInitializedRef = useRef(false)
+  const streamStartTsRef = useRef<number>(0)
+  const streamIdleWarningFiredRef = useRef(false)
 
   // ── canUseTool 回调（传给 query()，在工具执行前弹出确认 UI）─────────────────
   // 对标 Claude Code canUseTool / wrappedCanUseTool
@@ -118,6 +150,7 @@ export function REPL(_props: Props) {
       session_id: sessionIdRef.current,
       cwd: process.cwd(),
     })
+    emitSessionEndLog('exit_command')
     process.exit(0)
   }, [])
 
@@ -174,6 +207,7 @@ export function REPL(_props: Props) {
           cwd: process.cwd(),
         })
         sessionIdRef.current = randomUUID()
+        emitSessionEndLog('clear')
         void executeHooks({
           hook_event_name: 'SessionStart',
           source: 'clear',
@@ -192,16 +226,32 @@ export function REPL(_props: Props) {
 
       if (input === '/help') {
         history.appendUserMessage('/help')
-        history.startAssistantMessage()
-        history.appendStreamingDelta(
-          'Available commands:\n  /help    — show this message\n  /clear   — clear the conversation\n  /compact — compress conversation to save tokens\n  /exit    — exit the session',
+        history.appendAssistantMessage(
+          'Available commands:\n  /help    — show this message\n  /clear   — clear the conversation\n  /compact — compress conversation to save tokens\n  /report  — generate HTML report for current session log\n  /exit    — exit the session',
         )
-        history.finalizeAssistantMessage()
+        return
+      }
+
+      if (input === '/report') {
+        history.appendUserMessage('/report')
+        const jsonlPath = getLogFilePath()
+        const htmlPath = getHtmlFilePath()
+        if (!jsonlPath || !htmlPath) {
+          history.appendAssistantMessage('No session log found.')
+          return
+        }
+        try {
+          await generateReport(jsonlPath, htmlPath)
+          history.appendAssistantMessage(`Report generated: ${htmlPath}`)
+        } catch {
+          history.appendAssistantMessage('Failed to generate report.')
+        }
         return
       }
 
       if (input === '/compact') {
         history.appendUserMessage('/compact')
+        emitCompactTriggeredLog()
         setIsLoading(true)
         isLoadingRef.current = true
         history.startAssistantMessage()
@@ -244,6 +294,7 @@ export function REPL(_props: Props) {
         cwd: process.cwd(),
       })
 
+      addToHistory(input)
       history.appendUserMessage(input)
       setIsLoading(true)
       isLoadingRef.current = true
@@ -282,7 +333,18 @@ export function REPL(_props: Props) {
           sessionId: sessionIdRef.current,
         })
 
+        streamStartTsRef.current = Date.now()
+        streamIdleWarningFiredRef.current = false
+
         for await (const event of gen) {
+          const now = Date.now()
+          streamIdleWarningFiredRef.current = maybeLogStreamingIdleWarning(
+            now,
+            streamStartTsRef.current,
+            streamIdleWarningFiredRef.current,
+          )
+          streamStartTsRef.current = now
+
           switch (event.type) {
             // ── 生命周期 ────────────────────────────────────────────────
             case 'stream_request_start':
@@ -316,6 +378,11 @@ export function REPL(_props: Props) {
               setIsCompacting(false)
               setLastCompactInfo({ savedTokens: event.savedTokens })
               history.replaceMessages(event.newMessages)
+              break
+
+            // ── 扩展思考 ────────────────────────────────────────────────
+            case 'thinking_delta':
+              history.appendThinkingDelta(event.delta)
               break
 
             // ── 流式文本 ────────────────────────────────────────────────
