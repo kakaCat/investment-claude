@@ -8,12 +8,17 @@ import {
   clearSectionCache,
   type SectionContext,
 } from './systemPromptSections.js'
-import { IDENTITY, DOING_TASKS, TONE, PLAN_MODE_SECTION } from './promptSections.js'
+import {
+  IDENTITY,
+  DOING_TASKS,
+  TONE,
+  PLAN_MODE_SECTION,
+  MEMORY_SYSTEM_INSTRUCTIONS,
+} from './promptSections.js'
 import { loadEnvInfo } from '../context/envContext.js'
 import { loadWorkspaceSection } from '../context/workspaceContext.js'
 import { loadGitStatus } from '../context/gitContext.js'
 import { loadClaudeMd } from '../context/claudeMdContext.js'
-import { loadMemory } from '../context/memoryContext.js'
 
 let initialized = false
 
@@ -31,7 +36,7 @@ export function initSystemPrompt(): void {
   registerSection('workspace', (ctx) => loadWorkspaceSection(ctx))
   registerVolatileSection('git_status', (ctx) => loadGitStatus(ctx.cwd))
   registerSection('claude_md', (ctx) => loadClaudeMd(ctx.cwd))
-  registerSection('memory', (ctx) => loadMemory(ctx.cwd))
+  registerSection('memory', async () => MEMORY_SYSTEM_INSTRUCTIONS)
 
   // volatile 段（每轮重新执行）
   registerVolatileSection('plan_mode', async (ctx) =>
