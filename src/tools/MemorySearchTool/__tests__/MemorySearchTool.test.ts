@@ -1,31 +1,39 @@
 import { describe, it, expect, vi } from 'vitest'
 
+const scanFiles = vi.fn().mockResolvedValue([
+  {
+    filePath: '/memory/feedback_testing.md',
+    name: 'feedback_testing',
+    description: 'Do not mock the database',
+    type: 'feedback',
+    searchHint: 'database mock test',
+    mtimeMs: Date.now(),
+  },
+  {
+    filePath: '/memory/user_role.md',
+    name: 'user_role',
+    description: 'User is a data scientist',
+    type: 'user',
+    searchHint: 'data science ML',
+    mtimeMs: Date.now(),
+  },
+])
+
+const readFile = vi
+  .fn()
+  .mockResolvedValue(
+    '---\nname: feedback_testing\ndescription: test\ntype: feedback\n---\n\nDo not mock the database.',
+  )
+
 vi.mock('../../../memdir/backends/LocalFSBackend.js', () => ({
-  LocalFSBackend: vi.fn().mockImplementation(() => ({
-    scanFiles: vi.fn().mockResolvedValue([
-      {
-        filePath: '/memory/feedback_testing.md',
-        name: 'feedback_testing',
-        description: 'Do not mock the database',
-        type: 'feedback',
-        searchHint: 'database mock test',
-        mtimeMs: Date.now(),
-      },
-      {
-        filePath: '/memory/user_role.md',
-        name: 'user_role',
-        description: 'User is a data scientist',
-        type: 'user',
-        searchHint: 'data science ML',
-        mtimeMs: Date.now(),
-      },
-    ]),
-    readFile: vi
-      .fn()
-      .mockResolvedValue(
-        '---\nname: feedback_testing\ndescription: test\ntype: feedback\n---\n\nDo not mock the database.',
-      ),
-  })),
+  LocalFSBackend: class MockLocalFSBackend {
+    name = 'localfs'
+
+    constructor(_cwd: string) {}
+
+    scanFiles = scanFiles
+    readFile = readFile
+  },
 }))
 
 import { MemorySearchTool } from '../MemorySearchTool.js'

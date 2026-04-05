@@ -32,14 +32,15 @@ export class MemoryTypeRegistry {
   }
 
   getSubtree(typeName: string): string[] {
-    const node = this.nodes.get(typeName)
-    if (!node) return [typeName]
+    return this.getSubtreeRecursive(typeName, new Set())
+  }
 
-    const result: string[] = [typeName]
-    for (const child of node.children) {
-      result.push(...this.getSubtree(child))
-    }
-    return result
+  private getSubtreeRecursive(typeName: string, visited: Set<string>): string[] {
+    if (visited.has(typeName)) return []
+
+    visited.add(typeName)
+    const children = this.nodes.get(typeName)?.children ?? []
+    return [typeName, ...children.flatMap((child) => this.getSubtreeRecursive(child, visited))]
   }
 
   listAll(): string[] {

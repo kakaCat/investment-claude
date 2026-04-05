@@ -1,36 +1,11 @@
 import React from 'react'
 import { buildTool, type ToolUseContext } from '../../Tool.js'
 import { LocalFSBackend } from '../../memdir/backends/LocalFSBackend.js'
+import type { MemoryBackend } from '../../memdir/backends/MemoryBackend.js'
 import { MemoryTypeRegistry } from '../../memdir/typeRegistry.js'
-import { scoreMemoryForQuery } from '../../memdir/memoryScan.js'
+import { formatMemoryManifest, scoreMemoryForQuery } from '../../memdir/memoryScan.js'
 import { buildMemoryAgeWarning } from '../../memdir/memoryAge.js'
 import type { MemoryFileMeta } from '../../memdir/Memory.js'
-
-type MemoryBackendLike = {
-  scanFiles(signal: AbortSignal): Promise<MemoryFileMeta[]>
-  readFile(filePath: string): Promise<string>
-}
-
-function getSignal(context: ToolUseContext): AbortSignal {
-  return (
-    (context as ToolUseContext & { abortController?: AbortController }).abortController?.signal ??
-    context.abortSignal ??
-    new AbortController().signal
-  )
-}
-
-function createBackend(context: ToolUseContext): MemoryBackendLike {
-  const Backend = LocalFSBackend as unknown as {
-    new (cwd: string): MemoryBackendLike
-    (cwd: string): MemoryBackendLike
-  }
-
-  try {
-    return new Backend(context.cwd)
-  } catch {
-    return Backend(context.cwd)
-  }
-}
 
 export const MemorySearchTool = buildTool({
   name: 'memory_search',
@@ -54,7 +29,7 @@ export const MemorySearchTool = buildTool({
   async call(input, context) {
     const { query } = input as { query: string }
     const registry = new MemoryTypeRegistry()
-    const signal = getSignal(context)
+    const signal = context.abortSignal
 
     if (query.trim() === 'types') {
       const tree = registry.getTree()
@@ -77,7 +52,7 @@ export const MemorySearchTool = buildTool({
 
     const typeMatch = query.match(/^type:(.+)$/i)
     if (typeMatch) {
-      const backend = createBackend(context)
+      const backend: MemoryBackend = new LocalFSBackend(context.cwd)
       const typeName = typeMatch[1].trim()
       const subtree = registry.getSubtree(typeName)
       const metas = await backend.scanFiles(signal)
@@ -87,11 +62,12 @@ export const MemorySearchTool = buildTool({
         return `No memories found for type "${typeName}".`
       }
 
+      const manifestLines = formatMemoryManifest(filtered).split('\n')
       return filtered
-        .map((meta) => {
+        .map((meta, index) => {
           const handler = registry.getHandler(meta.type)
           const ageWarn = buildMemoryAgeWarning(meta.mtimeMs, handler)
-          const line = `- **${meta.name}** [${meta.type}]: ${meta.description} — \`${meta.filePath}\``
+          const line = manifestLines[index] ?? ''
           return ageWarn ? `${line}\n  ${ageWarn}` : line
         })
         .join('\n')
@@ -99,7 +75,7 @@ export const MemorySearchTool = buildTool({
 
     const selectMatch = query.match(/^select:(.+)$/i)
     if (selectMatch) {
-      const backend = createBackend(context)
+      const backend: MemoryBackend = new LocalFSBackend(context.cwd)
       const filename = selectMatch[1].trim()
       const metas = await backend.scanFiles(signal)
       const found = metas.find(
@@ -120,7 +96,7 @@ export const MemorySearchTool = buildTool({
     const searchMatch = query.match(/^search:(.+)$/i)
     const keywords = (searchMatch ? searchMatch[1] : query).trim()
     const terms = keywords.toLowerCase().split(/\s+/).filter(Boolean)
-    const backend = createBackend(context)
+    const backend: MemoryBackend = new LocalFSBackend(context.cwd)
     const metas = await backend.scanFiles(signal)
 
     const scored = metas
