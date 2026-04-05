@@ -7,6 +7,8 @@ import React from 'react'
 import { render } from 'ink'
 import { App } from '../components/App.js'
 import { REPL } from '../screens/REPL.js'
+import { logForDebugging } from '../utils/debug.js'
+import { logForDiagnosticsNoPII } from '../utils/diagLogs.js'
 
 // 加载 .env 文件（如果存在）
 function loadEnv() {
@@ -31,6 +33,10 @@ function loadEnv() {
 
 async function main() {
   loadEnv()
+
+  logForDebugging(`pi started pid=${process.pid}`)
+  logForDiagnosticsNoPII('info', 'cli_entry', { pid: process.pid })
+
   const args = process.argv.slice(2)
 
   if (args.includes('--version') || args.includes('-v')) {
