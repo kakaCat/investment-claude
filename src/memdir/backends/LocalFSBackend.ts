@@ -21,7 +21,7 @@ function parseFrontmatter(raw: string): { data: Record<string, string>; content:
 
 export class LocalFSBackend implements MemoryBackend {
   name = 'localfs'
-  private memoryDir: string
+  readonly memoryDir: string
 
   constructor(cwd: string) {
     const encoded = cwd.replace(/\//g, '-')
