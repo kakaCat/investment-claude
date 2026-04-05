@@ -1,4 +1,6 @@
 import { spawn } from 'child_process'
+import { logForDebugging } from '../utils/debug.js'
+import { logForDiagnosticsNoPII } from '../utils/diagLogs.js'
 import { getMatchingHooks } from './registry.js'
 import type {
   AggregatedHookResult,
@@ -56,6 +58,7 @@ async function executeHookSafely(
 ): Promise<HookResult | undefined> {
   try {
     if (hook.type === 'function') {
+      logForDebugging(`hook ${input.hook_event_name} fn called`)
       return await withTimeout(
         {
           promise: Promise.resolve(hook.callback(input) as unknown as HookResult | undefined),
@@ -65,15 +68,40 @@ async function executeHookSafely(
     }
 
     if (hook.type === 'command') {
+      const hookName = input.hook_event_name
+      const startTs = Date.now()
+      logForDebugging(`hook ${hookName} started (command)`)
+      logForDiagnosticsNoPII('info', 'hook_started', { hook: hookName, type: 'command' })
+
       if (hook.async) {
         executeCommandHookDetached(hook, input, signal)
         return undefined
       }
 
-      return await withTimeout(
-        executeCommandHook(hook, input, signal),
-        toMilliseconds(hook.timeout ?? 60),
-      )
+      try {
+        const result = await withTimeout(
+          executeCommandHook(hook, input, signal),
+          toMilliseconds(hook.timeout ?? 60),
+        )
+        const duration_ms = Date.now() - startTs
+        const outcome = result?.outcome ?? 'success'
+        logForDebugging(`hook ${hookName} completed outcome=${outcome} duration=${duration_ms}ms`)
+        logForDiagnosticsNoPII('info', 'hook_completed', { hook: hookName, duration_ms, outcome })
+        return result
+      } catch (err) {
+        const duration_ms = Date.now() - startTs
+        const isTimeout = err instanceof Error && err.message.includes('timed out')
+        if (isTimeout) {
+          logForDebugging(`hook ${hookName} timed out after ${duration_ms}ms`, { level: 'warn' })
+          logForDiagnosticsNoPII('warn', 'hook_failed', { hook: hookName, duration_ms, reason: 'timeout' })
+        } else {
+          logForDebugging(`hook ${hookName} error: ${err instanceof Error ? err.message : String(err)}`, {
+            level: 'error',
+          })
+          logForDiagnosticsNoPII('error', 'hook_failed', { hook: hookName, duration_ms })
+        }
+        return undefined
+      }
     }
 
     if (hook.type === 'prompt') {
