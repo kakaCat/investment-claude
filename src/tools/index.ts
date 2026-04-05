@@ -15,6 +15,7 @@ import { EnterPlanModeTool } from './EnterPlanModeTool/EnterPlanModeTool.js'
 import { ExitPlanModeTool } from './ExitPlanModeTool/ExitPlanModeTool.js'
 import { VerifyPlanExecutionTool } from './VerifyPlanExecutionTool/VerifyPlanExecutionTool.js'
 import { ToolSearchTool } from './ToolSearchTool/ToolSearchTool.js'
+import { MemorySearchTool } from './MemorySearchTool/MemorySearchTool.js'
 import { TodoWriteTool } from './TodoWriteTool/TodoWriteTool.js'
 import { TaskCreateTool } from './TaskCreateTool/TaskCreateTool.js'
 import { TaskGetTool } from './TaskGetTool/TaskGetTool.js'
@@ -48,6 +49,7 @@ const BUILTIN_TOOLS: Tool[] = [
   ExitPlanModeTool,
   VerifyPlanExecutionTool,
   ToolSearchTool,
+  MemorySearchTool,
   TodoWriteTool,
   TaskCreateTool,
   TaskGetTool,

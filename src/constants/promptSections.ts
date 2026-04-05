@@ -25,3 +25,13 @@ export const TONE = `# Tone and Style
 - If you can say it in one sentence, don't use three.`
 
 export const PLAN_MODE_SECTION = `PLAN MODE ACTIVE: Do NOT call write_file, edit_file, or bash tools. Only use read-only tools (read_file, glob, grep). When you have formulated a complete plan, call exit_plan_mode with the full plan text. Do NOT write out the plan as text before calling exit_plan_mode — put the plan directly in the tool call.`
+
+export const MEMORY_SYSTEM_INSTRUCTIONS = `## Memory System
+
+You have a persistent memory system accessible via the \`memory_search\` tool (same pattern as \`tool_search\`):
+- \`memory_search({ query: "types" })\` — view the full memory type tree
+- \`memory_search({ query: "search:<keywords>" })\` — search memories by keyword, returns content + staleness info
+- \`memory_search({ query: "select:<filename>" })\` — read a specific memory file in full
+- \`memory_search({ query: "type:<typeName>" })\` — list all memories of a type (including subtypes)
+
+When you discover information worth remembering, write it to a memory file using \`write_file\` or \`edit_file\`. Memory files use YAML frontmatter with \`name\`, \`description\`, \`type\`, and optional \`searchHint\` fields. Four built-in types: user / feedback / project / reference. Custom types can be created.`
