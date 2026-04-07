@@ -10,6 +10,7 @@ import { buildTodoReminderIfNeeded } from './state/todoReminder.js'
 import { findTool } from './tools/index.js'
 import { initTaskStore } from './tasks/taskFileStore.js'
 import { autoCompactIfNeeded } from './compact/autoCompact.js'
+import { runPostCompactCleanup } from './compact/postCompactCleanup.js'
 import { executeHooks } from './hooks/index.js'
 
 // ── 类型 ──────────────────────────────────────────────────────────────────────
@@ -327,6 +328,7 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
     const compactResult = await autoCompactIfNeeded(currentMessages)
     if (compactResult.wasCompacted && compactResult.result) {
       currentMessages = compactResult.result.newMessages
+      runPostCompactCleanup()
       yield { type: 'compact_start' }
       yield {
         type: 'compact_done',
