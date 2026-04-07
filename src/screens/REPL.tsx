@@ -6,6 +6,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { query, type CanUseTool } from '../query.js'
 import { getSystemPrompt, initSystemPrompt, clearSectionCache, type SectionContext } from '../constants/prompts.js'
+import { clearSnipStore } from '../utils/snipStore.js'
+import { clearMessageIds } from '../utils/messageIds.js'
 import { executeHooks } from '../hooks/index.js'
 import { useMergedTools } from '../hooks/useMergedTools.js'
 import { getAllTools } from '../tools/index.js'
@@ -20,15 +22,21 @@ import type { ToolUseContext } from '../Tool.js'
 import type { Message } from '../types/message.js'
 import { createCronScheduler } from '../cron/cronScheduler.js'
 import { compactConversation, partialCompactConversation } from '../compact/index.js'
+import { runPostCompactCleanup } from '../compact/postCompactCleanup.js'
 import { initSessionMemory } from '../sessionMemory/index.js'
 import { initObservability } from '../observability/index.js'
-import { getLogFilePath, getHtmlFilePath } from '../observability/logger.js'
-import { generateReport } from '../observability/htmlReport.js'
 import { getWorkDir, getSessionId, getWorkspaceDir } from '../bootstrap/state.js'
 import { addToHistory } from '../history.js'
 import { logForDebugging } from '../utils/debug.js'
 import { logForDiagnosticsNoPII } from '../utils/diagLogs.js'
 import { listSkills, type Skill } from '../skills/index.js'
+import { dispatchSlashCommand, type CommandContext } from '../commands/index.js'
+import '../commands/clear.js'
+import '../commands/help.js'
+import '../commands/compact.js'
+import '../commands/report.js'
+import '../commands/exit.js'
+import '../commands/dream.js'
 
 type Props = {
   // Stub props — 接口预留，当前不使用
@@ -143,6 +151,57 @@ export function REPL(_props: Props) {
     [],
   )
 
+  const resetSession = useCallback(() => {
+    void executeHooks({
+      hook_event_name: 'SessionEnd',
+      exit_reason: 'clear',
+      session_id: sessionIdRef.current,
+      cwd: process.cwd(),
+    })
+    sessionIdRef.current = randomUUID()
+    emitSessionEndLog('clear')
+    void executeHooks({
+      hook_event_name: 'SessionStart',
+      source: 'clear',
+      session_id: sessionIdRef.current,
+      cwd: process.cwd(),
+    })
+    clearSectionCache()
+    clearSnipStore()
+    clearMessageIds()
+    history.clearMessages()
+    conversationRef.current = []
+  }, [history])
+
+  const runCompact = useCallback(async (sessionId: string) => {
+    emitCompactTriggeredLog()
+    setIsLoading(true)
+    isLoadingRef.current = true
+    try {
+      const result = await compactConversation(conversationRef.current, {
+        suppressFollowUpQuestions: false,
+        sessionId,
+      })
+      conversationRef.current = result.newMessages
+      runPostCompactCleanup()
+      history.appendUserMessage(
+        `[System: Conversation compacted. Saved ~${result.savedTokens.toLocaleString()} tokens]`,
+      )
+    } catch (err) {
+      history.appendUserMessage(
+        `[System: Compact failed — ${err instanceof Error ? err.message : String(err)}]`,
+      )
+    } finally {
+      setIsLoading(false)
+      isLoadingRef.current = false
+    }
+  }, [history])
+
+  const enterPartialCompact = useCallback((pivotIndex: number) => {
+    setPartialSelectedIndex(pivotIndex)
+    setIsPartialSelectMode(true)
+  }, [])
+
   const doExit = useCallback(async () => {
     await executeHooks({
       hook_event_name: 'SessionEnd',
@@ -199,103 +258,37 @@ export function REPL(_props: Props) {
   const handleSubmit = useCallback(
     async (input: string) => {
       // ── slash commands ──────────────────────────────────────────────────
-      if (input === '/clear') {
-        void executeHooks({
-          hook_event_name: 'SessionEnd',
-          exit_reason: 'clear',
-          session_id: sessionIdRef.current,
-          cwd: process.cwd(),
-        })
-        sessionIdRef.current = randomUUID()
-        emitSessionEndLog('clear')
-        void executeHooks({
-          hook_event_name: 'SessionStart',
-          source: 'clear',
-          session_id: sessionIdRef.current,
-          cwd: process.cwd(),
-        })
-        clearSectionCache()
-        history.clearMessages()
-        conversationRef.current = []
-        return
-      }
-      if (input === '/exit') {
-        await doExit()
-        return
+      const originalInput = input
+      if (input.startsWith('/')) {
+        const commandCtx: CommandContext = {
+          history,
+          conversationRef,
+          sessionIdRef,
+          doExit,
+          resetSession,
+          runCompact,
+          enterPartialCompact,
+        }
+        const { handled, expandedInput } = await dispatchSlashCommand(input, commandCtx)
+        if (handled) return
+        // skill 展开：expandedInput 发给 API，originalInput 用于显示和历史
+        if (expandedInput !== undefined) {
+          input = expandedInput
+        }
       }
 
-      if (input === '/help') {
-        history.appendUserMessage('/help')
-        history.appendAssistantMessage(
-          'Available commands:\n  /help    — show this message\n  /clear   — clear the conversation\n  /compact — compress conversation to save tokens\n  /report  — generate HTML report for current session log\n  /exit    — exit the session',
-        )
-        return
-      }
-
-      if (input === '/report') {
-        history.appendUserMessage('/report')
-        const jsonlPath = getLogFilePath()
-        const htmlPath = getHtmlFilePath()
-        if (!jsonlPath || !htmlPath) {
-          history.appendAssistantMessage('No session log found.')
-          return
-        }
-        try {
-          await generateReport(jsonlPath, htmlPath)
-          history.appendAssistantMessage(`Report generated: ${htmlPath}`)
-        } catch {
-          history.appendAssistantMessage('Failed to generate report.')
-        }
-        return
-      }
-
-      if (input === '/compact') {
-        history.appendUserMessage('/compact')
-        emitCompactTriggeredLog()
-        setIsLoading(true)
-        isLoadingRef.current = true
-        history.startAssistantMessage()
-        try {
-          const result = await compactConversation(history.messages, {
-            suppressFollowUpQuestions: false,
-            sessionId: sessionIdRef.current,
-          })
-          history.replaceMessages(result.newMessages)
-          history.finalizeAssistantMessage()
-          history.appendUserMessage(
-            `[System: Conversation compacted. Saved ~${result.savedTokens.toLocaleString()} tokens]`,
-          )
-        } catch (err) {
-          history.finalizeAssistantMessage()
-          history.appendUserMessage(
-            `[System: Compact failed — ${err instanceof Error ? err.message : String(err)}]`,
-          )
-        } finally {
-          setIsLoading(false)
-          isLoadingRef.current = false
-        }
-        return
-      }
-
-      if (input === '/compact partial') {
-          if (history.messages.length < 2) {
-            history.appendUserMessage('[System: Need at least 2 messages for partial compact]')
-            return
-          }
-          setPartialSelectedIndex(Math.floor(history.messages.length / 2))
-          setIsPartialSelectMode(true)
-          return
-        }
+      const displayInput = originalInput
+      const queryInput = input
 
       await executeHooks({
         hook_event_name: 'UserPromptSubmit',
-        prompt: input,
+        prompt: displayInput,
         session_id: sessionIdRef.current,
         cwd: process.cwd(),
       })
 
-      addToHistory(input)
-      history.appendUserMessage(input)
+      addToHistory(displayInput)
+      history.appendUserMessage(displayInput)
       setIsLoading(true)
       isLoadingRef.current = true
       history.startAssistantMessage()
@@ -310,7 +303,7 @@ export function REPL(_props: Props) {
         // conversationRef 存储 query() 内部 currentMessages 的快照，顺序始终正确。
         const currentMessages = [
           ...conversationRef.current,
-          { type: 'user' as const, content: [{ type: 'text' as const, text: input }] },
+          { type: 'user' as const, content: [{ type: 'text' as const, text: queryInput }] },
         ]
 
         const gen = query({
@@ -365,6 +358,11 @@ export function REPL(_props: Props) {
               history.appendUserMessage(`[System: reached ${event.turnCount} turn limit]`)
               break
 
+            case 'output_truncated':
+              history.finalizeAssistantMessage()
+              history.appendUserMessage('[System: output token limit reached, response may be incomplete]')
+              break
+
             case 'error':
               history.finalizeAssistantMessage()
               console.error('Query error:', event.error)
@@ -377,7 +375,6 @@ export function REPL(_props: Props) {
             case 'compact_done':
               setIsCompacting(false)
               setLastCompactInfo({ savedTokens: event.savedTokens })
-              history.replaceMessages(event.newMessages)
               break
 
             // ── 扩展思考 ────────────────────────────────────────────────
@@ -414,7 +411,7 @@ export function REPL(_props: Props) {
         abortControllerRef.current = null
       }
     },
-    [tools, history, canUseTool, askUser, doExit, enterPlanMode, exitPlanMode, verifyExecution],
+    [tools, history, canUseTool, askUser, doExit, enterPlanMode, exitPlanMode, verifyExecution, resetSession, runCompact, enterPartialCompact],
   )
 
   // Keep ref in sync with latest handleSubmit (stale-closure-safe for cron scheduler)
@@ -475,12 +472,13 @@ export function REPL(_props: Props) {
               isLoadingRef.current = true
               try {
                 const result = await partialCompactConversation(
-                  history.messages,
+                  conversationRef.current,
                   partialSelectedIndex,
                   'from',
                   { sessionId: sessionIdRef.current },
                 )
-                history.replaceMessages(result.newMessages)
+                conversationRef.current = result.newMessages
+                runPostCompactCleanup()
                 history.appendUserMessage(
                   `[System: Partial compact (from). Saved ~${result.savedTokens.toLocaleString()} tokens]`,
                 )
@@ -501,12 +499,13 @@ export function REPL(_props: Props) {
               isLoadingRef.current = true
               try {
                 const result = await partialCompactConversation(
-                  history.messages,
+                  conversationRef.current,
                   partialSelectedIndex,
                   'up_to',
                   { sessionId: sessionIdRef.current },
                 )
-                history.replaceMessages(result.newMessages)
+                conversationRef.current = result.newMessages
+                runPostCompactCleanup()
                 history.appendUserMessage(
                   `[System: Partial compact (up to). Saved ~${result.savedTokens.toLocaleString()} tokens]`,
                 )
@@ -575,9 +574,9 @@ export function REPL(_props: Props) {
         return
       }
 
-      // Ctrl+C 中止当前 query（对标 Claude Code interrupt()）
-      if (key.ctrl && input === 'c' && isLoading) {
-        abortControllerRef.current?.abort()
+      // Ctrl+C / ESC 中止当前 query（对标 CC chat:cancel 加载中行为）
+      if (isLoading && (key.escape || (key.ctrl && input === 'c'))) {
+        abortControllerRef.current?.abort('interrupt')
       }
     },
     { isActive: true },
@@ -715,7 +714,7 @@ export function REPL(_props: Props) {
 
       {/* 输入框 */}
       {!isLoading && !askUserRequest && !planApprovalRequest && !verifyRequest && (
-        <PromptInput onSubmit={handleSubmit} isLoading={isLoading} onExit={doExit} skills={skills} />
+        <PromptInput onSubmit={handleSubmit} isLoading={isLoading} onExit={doExit} onCancel={() => abortControllerRef.current?.abort('interrupt')} skills={skills} />
       )}
     </Box>
   )

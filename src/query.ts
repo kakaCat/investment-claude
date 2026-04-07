@@ -3,15 +3,34 @@
 // 职责：调 API → 流式接收 → 权限检查 → 执行工具 → yield StreamEvent
 
 import Anthropic from '@anthropic-ai/sdk'
+import { randomUUID } from 'crypto'
+import { createAnthropicClient } from './anthropic.js'
 import type { Tool, ToolUseContext } from './Tool.js'
 import type { Message, StreamEvent, UserMessage, AssistantMessage } from './types/message.js'
+import { hasUltrathinkKeyword, getThinkingParams } from './utils/thinking.js'
 import { getAppState, setAppState } from './state/AppState.js'
 import { buildTodoReminderIfNeeded } from './state/todoReminder.js'
 import { findTool } from './tools/index.js'
 import { initTaskStore } from './tasks/taskFileStore.js'
-import { autoCompactIfNeeded } from './compact/autoCompact.js'
+import {
+  autoCompactIfNeeded,
+  createAutoCompactTracking,
+  getAutoCompactThreshold,
+  type AutoCompactTracking,
+} from './compact/autoCompact.js'
 import { runPostCompactCleanup } from './compact/postCompactCleanup.js'
+import { snipIfNeeded } from './compact/snip.js'
+import { microcompactIfNeeded } from './compact/microcompact.js'
 import { executeHooks } from './hooks/index.js'
+import {
+  createContentReplacementState,
+  enforceToolResultBudget,
+  processToolResult,
+  DEFAULT_MAX_RESULT_SIZE_CHARS,
+} from './utils/toolResultStorage.js'
+import { registerMessageId } from './utils/messageIds.js'
+import { isSnipped } from './utils/snipStore.js'
+import { isRetryable, getRetryDelay } from './utils/apiRetry.js'
 
 // ── 类型 ──────────────────────────────────────────────────────────────────────
 
@@ -55,21 +74,78 @@ function toSDKTool(tool: Tool): Anthropic.Tool {
   }
 }
 
-/** 将 Pi 的 Message[] 转换为 Anthropic SDK 格式 */
+/**
+ * 在 user message content 的最后一个 text block 末尾追加 [id:xxx] 标签。
+ * 只修改 SDK 副本，不改原始 msg。
+ */
+function appendIdTag(
+  content: Anthropic.MessageParam['content'],
+  shortId: string,
+): Anthropic.MessageParam['content'] {
+  const tag = `\n[id:${shortId}]`
+  if (typeof content === 'string') {
+    return content + tag
+  }
+  if (!Array.isArray(content) || content.length === 0) {
+    return content
+  }
+  // Find last text block and append tag
+  const blocks = [...content] as Anthropic.ContentBlockParam[]
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const block = blocks[i]!
+    if (block.type === 'text') {
+      blocks[i] = { ...block, text: block.text + tag }
+      return blocks
+    }
+  }
+  // No text block found — append a new one
+  return [...blocks, { type: 'text', text: tag }]
+}
+
+/**
+ * 将 Pi 的 Message[] 转换为 Anthropic SDK 格式。
+ * 对非 meta 的 user message 注入 [id:xxx] 标签，让模型能通过 SnipTool 引用。
+ */
 function toSDKMessages(messages: Message[]): Anthropic.MessageParam[] {
   return messages
     .filter((msg): msg is Exclude<Message, { type: 'compact_boundary' }> => msg.type !== 'compact_boundary')
-    .map((msg) => ({
-      role: msg.type as 'user' | 'assistant',
-      content: msg.content as Anthropic.MessageParam['content'],
-    }))
+    .map((msg) => {
+      if (msg.type === 'user' && msg.uuid && !msg.isMeta) {
+        const shortId = registerMessageId(msg.uuid)
+        return {
+          role: 'user' as const,
+          content: appendIdTag(msg.content as Anthropic.MessageParam['content'], shortId),
+        }
+      }
+      return {
+        role: msg.type as 'user' | 'assistant',
+        content: msg.content as Anthropic.MessageParam['content'],
+      }
+    })
+}
+
+/**
+ * 取最后一个 compact_boundary 之后的消息（对标 CC getMessagesAfterCompactBoundary）。
+ * 同时过滤掉被 SnipTool 标记删除的消息。
+ */
+function getMessagesAfterCompactBoundary(messages: Message[]): Message[] {
+  let startIdx = 0
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]!.type === 'compact_boundary') {
+      startIdx = i
+      break
+    }
+  }
+  const sliced = startIdx === 0 ? messages : messages.slice(startIdx)
+  // Filter out messages marked as snipped by SnipTool
+  return sliced.filter(msg => msg.type !== 'user' || !msg.uuid || !isSnipped(msg.uuid))
 }
 
 // ── 单轮流式调用（对标 Claude Code claude.ts 中的 API 流）─────────────────────
 
 /**
  * 对 API 发起一轮流式请求，累积 assistantContent 并 yield 文本 delta。
- * 不做工具执行 — 那是 executeTools 的事。
+ * 返回完整的 assistantContent 供调用方追加到消息历史。
  */
 async function* streamOneTurn(
   client: Anthropic,
@@ -80,81 +156,83 @@ async function* streamOneTurn(
     tools: Tool[]
     abortSignal?: AbortSignal
   },
-): AsyncGenerator<StreamEvent, AssistantMessage['content']> {
-  const assistantContent: AssistantMessage['content'] = []
+): AsyncGenerator<StreamEvent, { content: AssistantMessage['content']; stopReason: string | null }> {
+  const { model, systemPrompt, messages, tools, abortSignal } = params
+
+  const thinkingParams = getThinkingParams(model)
+
+  const sdkMessages = toSDKMessages(messages)
+  const sdkTools = tools.map(toSDKTool)
 
   const stream = client.messages.stream(
     {
-      model: params.model,
-      max_tokens: 8192,
-      system: params.systemPrompt,
-      messages: toSDKMessages(params.messages),
-      tools: params.tools.map(toSDKTool),
+      model,
+      system: systemPrompt,
+      messages: sdkMessages,
+      tools: sdkTools,
+      max_tokens: thinkingParams.thinking
+        ? thinkingParams.max_tokens ?? 16000
+        : 16000,
+      ...(thinkingParams.thinking ? { thinking: thinkingParams.thinking } : {}),
     },
-    { signal: params.abortSignal },
+    { signal: abortSignal },
   )
 
-  for await (const chunk of stream) {
-    // 中止检查
-    if (params.abortSignal?.aborted) {
-      return assistantContent
-    }
+  const assistantContent: AssistantMessage['content'] = []
+  let stopReason: string | null = null
 
-    if (chunk.type === 'content_block_start') {
-      if (chunk.content_block.type === 'tool_use') {
-        // tool_use 的 input 会在后续 delta 中陆续到达，这里先占一个壳。
+  for await (const event of stream) {
+    if (event.type === 'content_block_start') {
+      if (event.content_block.type === 'text') {
+        assistantContent.push({ type: 'text', text: '' })
+      } else if (event.content_block.type === 'thinking') {
+        assistantContent.push({ type: 'thinking', thinking: '' })
+      } else if (event.content_block.type === 'tool_use') {
         assistantContent.push({
           type: 'tool_use',
-          id: chunk.content_block.id,
-          name: chunk.content_block.name,
+          id: event.content_block.id,
+          name: event.content_block.name,
           input: {},
         })
       }
-    } else if (chunk.type === 'content_block_delta') {
-      if (chunk.delta.type === 'text_delta') {
-        const delta = chunk.delta.text
-        const last = assistantContent[assistantContent.length - 1]
-        if (last?.type === 'text') {
-          last.text += delta
-        } else {
-          assistantContent.push({ type: 'text', text: delta })
+    } else if (event.type === 'content_block_delta') {
+      const last = assistantContent[assistantContent.length - 1]
+      if (!last) continue
+      if (event.delta.type === 'text_delta' && last.type === 'text') {
+        last.text += event.delta.text
+        yield { type: 'text_delta', delta: event.delta.text }
+      } else if (event.delta.type === 'thinking_delta' && last.type === 'thinking') {
+        last.thinking += event.delta.thinking
+        yield { type: 'thinking_delta', delta: event.delta.thinking }
+      } else if (event.delta.type === 'input_json_delta' && last.type === 'tool_use') {
+        // Accumulate JSON string for tool input
+        if (!('_inputJson' in last)) {
+          (last as { _inputJson?: string })._inputJson = ''
         }
-        yield { type: 'text_delta', delta }
-      } else if (chunk.delta.type === 'input_json_delta') {
-        // 累积 tool input JSON（流式传输）
-        const last = assistantContent[assistantContent.length - 1]
-        if (last?.type === 'tool_use') {
-          const existing = (last as any)._inputJson ?? ''
-          ;(last as any)._inputJson = existing + chunk.delta.partial_json
-        }
+        ;(last as { _inputJson?: string })._inputJson! += event.delta.partial_json
       }
-    } else if (chunk.type === 'message_stop') {
-      // 解析所有 tool_use 的完整 input
-      for (const c of assistantContent) {
-        if (c.type === 'tool_use') {
-          const raw = (c as any)._inputJson ?? '{}'
-          try {
-            // SDK 把工具参数按 JSON 碎片流出来，结束时再一次性还原成对象。
-            c.input = JSON.parse(raw)
-          } catch {
-            // 解析失败时回退为空对象，避免整个 query 循环因为坏 JSON 中断。
-            c.input = {}
-          }
-          delete (c as any)._inputJson
+    } else if (event.type === 'content_block_stop') {
+      const last = assistantContent[assistantContent.length - 1]
+      if (last?.type === 'tool_use' && '_inputJson' in last) {
+        try {
+          last.input = JSON.parse((last as { _inputJson?: string })._inputJson ?? '{}')
+        } catch {
+          last.input = {}
         }
+        delete (last as { _inputJson?: string })._inputJson
       }
+    } else if (event.type === 'message_delta') {
+      stopReason = event.delta.stop_reason ?? null
     }
   }
 
-  return assistantContent
+  return { content: assistantContent, stopReason }
 }
 
-// ── 工具执行（对标 Claude Code runTools）─────────────────────────────────────
+// ── 工具执行 ──────────────────────────────────────────────────────────────────
 
-/**
- * 执行单轮的所有工具调用，yield tool_use / tool_result / tool_denied 事件。
- * 返回 toolResults 列表用于追加到历史。
- */
+const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT = 3
+
 async function* executeTools(
   toolUses: AssistantMessage['content'],
   tools: Tool[],
@@ -204,7 +282,7 @@ async function* executeTools(
       toolResults.push({
         type: 'tool_result',
         tool_use_id: c.id,
-        // 仍然补一条 tool_result，保证模型下一轮能看到“工具未执行”的结果。
+        // 仍然补一条 tool_result，保证模型下一轮能看到"工具未执行"的结果。
         content: 'Tool use was denied by the user.',
       })
       if (preToolHookResult.preventContinuation) {
@@ -223,6 +301,13 @@ async function* executeTools(
     } else {
       try {
         result = await tool.call(c.input, context)
+        // Layer 1: 超大结果写磁盘，返回 <persisted-output> 预览
+        result = await processToolResult(
+          c.id,
+          c.name,
+          result,
+          tool.maxResultSizeChars ?? DEFAULT_MAX_RESULT_SIZE_CHARS,
+        )
         await executeHooks(
           {
             hook_event_name: 'PostToolUse',
@@ -258,9 +343,8 @@ async function* executeTools(
   return toolResults
 }
 
-// ── 默认 canUseTool（空方法占位，后续由 REPL 注入实际实现）────────────────────
+// ── 默认 canUseTool ────────────────────────────────────────────────────────────
 
-/** 默认全部允许（REPL 会传入实际的 canUseTool 弹窗逻辑） */
 async function defaultCanUseTool(_name: string, _input: unknown): Promise<'allow' | 'deny'> {
   return 'allow'
 }
@@ -268,23 +352,22 @@ async function defaultCanUseTool(_name: string, _input: unknown): Promise<'allow
 // ── 主循环（对标 Claude Code queryLoop）──────────────────────────────────────
 
 /**
- * 核心主循环：调用 API，流式 yield 事件，支持多轮工具调用
+ * 核心主循环：调用 API，流式 yield 事件，支持多轮工具调用。
  *
- * 使用方式（在 REPL.tsx 中）：
- *   for await (const event of query(params)) {
- *     if (event.type === 'text_delta') { ... }
- *     if (event.type === 'tool_use') { ... }
- *     if (event.type === 'done') break
- *   }
+ * messages 语义（对标 CC state.messages）：
+ *   - working set，存储 boundary 之后的内容
+ *   - 每轮末尾重建：messages = [...messagesForQuery, ...assistant, ...toolResults]
+ *   - snip/microcompact 结果通过轮末重建自动持久化，下一轮不重复计算
+ *   - autocompact 成功后 messagesForQuery = postCompactMessages，messages 随之缩短
  */
 export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
   const {
-    messages,
+    messages: initialMessages,
     tools,
     allTools,
     systemPrompt,
     model = process.env.PI_MODEL ?? 'deepseek-chat',
-    maxTurns = 10,
+    maxTurns,
     abortSignal,
     canUseTool = defaultCanUseTool,
     askUser,
@@ -299,11 +382,10 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
 
   await initTaskStore()
 
-  // ToolUseContext 在整个 query 生命周期内复用
   const toolUseContext: ToolUseContext = {
     abortSignal: abortSignal ?? new AbortController().signal,
     cwd: process.cwd(),
-    tools: allTools ?? tools, // ToolSearchTool 能看到所有工具，包括 deferLoading 的
+    tools: allTools ?? tools,
     getAppState,
     setAppState,
     askUser,
@@ -313,21 +395,54 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
     onExit,
   }
 
-  const client = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    baseURL: process.env.PI_BASE_URL,
-  })
+  const client = createAnthropicClient()
 
-  // currentMessages 会在每一轮后持续扩展，形成“assistant -> tool_result -> assistant”的链路。
-  let currentMessages = [...messages]
+  // working set — 对标 CC state.messages
+  // 初始值来自调用方（REPL 传入 conversationRef.current）
+  // Stamp any user messages that don't have a uuid yet (e.g. the new message from REPL)
+  let messages: Message[] = initialMessages.map(msg =>
+    msg.type === 'user' && !msg.uuid && !msg.isMeta
+      ? { ...msg, uuid: randomUUID() }
+      : msg,
+  )
   let turnCount = 0
+  let maxTokensRecoveryAttempts = 0
+  let apiRetryAttempts = 0
+  const replacementState = createContentReplacementState()
+  // Per-query tracking，不跨 session 污染
+  let tracking: AutoCompactTracking = createAutoCompactTracking()
 
   // ── 主循环 ────────────────────────────────────────────────────────────────
   while (true) {
-    // ── Auto compact check ──────────────────────────────────────────────
-    const compactResult = await autoCompactIfNeeded(currentMessages)
+    // 每轮从 working set 中取 boundary 之后的消息，过滤 snipped 消息
+    let messagesForQuery = getMessagesAfterCompactBoundary(messages)
+
+    // Layer 2: 卸载大工具结果（让 autoCompact token 计算更准确）
+    messagesForQuery = await enforceToolResultBudget(messagesForQuery, replacementState)
+
+    // Snip: 截断超出上下文窗口的旧消息（结果通过轮末重建写回 messages）
+    const snipResult = snipIfNeeded(messagesForQuery, getAutoCompactThreshold())
+    if (snipResult.didSnip) {
+      messagesForQuery = snipResult.messages
+      yield { type: 'snip_done', messagesRemoved: snipResult.messagesRemoved, tokensFreed: snipResult.tokensFreed }
+    }
+
+    // Microcompact: 清空旧 tool_result 内容（time-based）
+    const mcResult = microcompactIfNeeded(messagesForQuery)
+    if (mcResult.toolsCleared > 0) {
+      messagesForQuery = mcResult.messages
+      yield { type: 'microcompact_done', toolsCleared: mcResult.toolsCleared, tokensSaved: mcResult.tokensSaved }
+    }
+
+    // Autocompact: token 超阈值时调 API 做摘要压缩
+    const compactResult = await autoCompactIfNeeded(
+      messagesForQuery,
+      tracking,
+      { snipTokensFreed: snipResult.tokensFreed },
+    )
+    tracking = compactResult.tracking
     if (compactResult.wasCompacted && compactResult.result) {
-      currentMessages = compactResult.result.newMessages
+      messagesForQuery = compactResult.result.newMessages
       runPostCompactCleanup()
       yield { type: 'compact_start' }
       yield {
@@ -343,28 +458,30 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
       return
     }
 
-    // maxTurns 检查（对标 Claude Code max_turns_reached）
-    if (turnCount >= maxTurns) {
-      yield { type: 'messages_snapshot', messages: [...currentMessages] }
-      yield { type: 'max_turns_reached', turnCount }
-      return
-    }
-
-    // 每轮 API 调用开始前通知（对标 Claude Code stream_request_start）
     yield { type: 'stream_request_start' }
-    turnCount++
 
     // ── 单轮流式调用 ────────────────────────────────────────────────────────
     let assistantContent: AssistantMessage['content']
+    let stopReason: string | null
     try {
-      assistantContent = yield* streamOneTurn(client, {
+      ;({ content: assistantContent, stopReason } = yield* streamOneTurn(client, {
         model,
         systemPrompt,
-        messages: currentMessages,
+        messages: messagesForQuery,
         tools,
         abortSignal,
-      })
+      }))
     } catch (err) {
+      if (isRetryable(err) && apiRetryAttempts < 5) {
+        apiRetryAttempts++
+        const delay = getRetryDelay(apiRetryAttempts)
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, delay)
+          abortSignal?.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('Aborted')) }, { once: true })
+        })
+        continue
+      }
+      apiRetryAttempts = 0
       await executeHooks({
         hook_event_name: 'StopFailure',
         error: err instanceof Error ? err.message : String(err),
@@ -374,41 +491,98 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
       yield { type: 'error', error: err instanceof Error ? err : new Error(String(err)) }
       return
     }
+    apiRetryAttempts = 0
 
-    // 将 assistant 消息追加到历史
-    currentMessages.push({ type: 'assistant', content: assistantContent })
+    // assistant 消息追加到 messagesForQuery（含 timestamp，供 microcompact 使用）
+    const assistantMsg: AssistantMessage = {
+      type: 'assistant',
+      content: assistantContent,
+      timestamp: new Date().toISOString(),
+    }
+
+    // ── max_tokens 续写恢复 ────────────────────────────────────────────────
+    if (stopReason === 'max_tokens') {
+      if (maxTokensRecoveryAttempts < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT) {
+        maxTokensRecoveryAttempts++
+        const recoveryMsg: UserMessage = {
+          type: 'user',
+          content: [{
+            type: 'text',
+            text: 'Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.',
+          }],
+          isMeta: true,
+        }
+        // 轮末重建（对标 CC continue site）
+        messages = [...messagesForQuery, assistantMsg, recoveryMsg]
+        continue
+      }
+      // 超过重试上限
+      messages = [...messagesForQuery, assistantMsg]
+      yield { type: 'messages_snapshot', messages: [...messages] }
+      yield { type: 'output_truncated' }
+      return
+    }
+
+    maxTokensRecoveryAttempts = 0
 
     // ── 检查是否有工具调用 ──────────────────────────────────────────────────
-    const toolUses = assistantContent.filter((c) => c.type === 'tool_use')
-    if (toolUses.length === 0) {
-      // 无工具调用 → 对话结束，先快照当前完整消息供下一轮使用
-      yield { type: 'messages_snapshot', messages: [...currentMessages] }
-      await executeHooks({
+    if (stopReason !== 'tool_use') {
+      // 无工具调用 → 对话结束，轮末重建后 yield 快照
+      messages = [...messagesForQuery, assistantMsg]
+      yield { type: 'messages_snapshot', messages: [...messages] }
+      const stopHookResult = await executeHooks({
         hook_event_name: 'Stop',
         stop_reason: 'done',
         session_id: sessionId,
         cwd: toolUseContext.cwd,
-        messages: currentMessages,
+        messages,
       })
+      // Stop hook blocking 重试（对标 CC blockingErrors）
+      if (stopHookResult.blockingErrors?.length) {
+        messages = [...messages, ...stopHookResult.blockingErrors]
+        continue
+      }
       yield { type: 'done' }
       return
     }
 
     // ── 执行工具（含权限检查）──────────────────────────────────────────────
-    const toolResults = yield* executeTools(assistantContent, tools, canUseTool, toolUseContext, sessionId)
+    const toolResultContent = yield* executeTools(assistantContent, tools, canUseTool, toolUseContext, sessionId)
 
-    // tool_result 作为 user 消息回灌给模型，这是 Anthropic 工具调用协议要求的格式。
-    currentMessages.push({ type: 'user', content: toolResults })
+    const toolResultMsg: UserMessage = {
+      type: 'user',
+      content: toolResultContent,
+    }
 
-    // Todo reminder 注入（对标 Claude Code getTodoReminderAttachments）
-    // 上下文压缩后 todo_write 历史消失，turnsSinceLastTodoWrite 会变大，
-    // 触发注入让模型重新感知当前任务状态。
+    // Todo reminder 注入
     const todoReminder = buildTodoReminderIfNeeded(
-      currentMessages,
+      [...messagesForQuery, assistantMsg, toolResultMsg],
       getAppState().todos,
     )
+
+    // 轮末重建 messages（对标 CC continue site）
+    // snip/microcompact 结果通过 messagesForQuery 自动持久化
     if (todoReminder) {
-      currentMessages.push(todoReminder)
+      messages = [...messagesForQuery, assistantMsg, toolResultMsg, todoReminder]
+    } else {
+      messages = [...messagesForQuery, assistantMsg, toolResultMsg]
     }
+
+    // 每轮工具调用后 yield 快照，让 REPL conversationRef 保持最新
+    yield { type: 'messages_snapshot', messages: [...messages] }
+
+    // 对标 CC：用户 Ctrl+C 中断（interrupt）时，工具已执行完但不继续下一轮
+    if (abortSignal?.aborted && abortSignal.reason === 'interrupt') {
+      yield { type: 'done' }
+      return
+    }
+
+    // maxTurns 检查
+    if (maxTurns && turnCount >= maxTurns) {
+      yield { type: 'max_turns_reached', turnCount }
+      return
+    }
+
+    turnCount++
   }
 }
