@@ -77,17 +77,40 @@ src/tools/BrowserTool/
 
 ### 2.2 Actions
 
+**导航与页面理解**
+
 | Action | 参数 | 说明 |
 |--------|------|------|
 | `connect` | `url?` | 连接已有 Chrome（CDP），默认 `http://localhost:9222`。**推荐首选**，使用用户真实 Chrome，天然绕过反爬 |
 | `navigate` | `url` | 跳转 URL，返回标题 + 文本预览（前 2000 字符） |
-| `snapshot` | — | 获取页面语义结构（aria snapshot），比 getText/getHTML 更适合模型理解复杂页面 |
-| `click` | `selector` | CSS selector 点击，随机延迟模拟人类操作 |
-| `fill` | `selector`, `text` | 填写表单字段 |
-| `getText` | `selector` | 提取文本，>1000 字符时保存到 session 文件 |
+| `snapshot` | — | 获取页面语义结构（aria snapshot），比 getText/getHTML 更适合模型理解复杂页面，返回可读的 aria 树文本 |
+| `getText` | `selector?` | 提取文本，>1000 字符时保存到 session 文件 |
 | `getHTML` | — | 获取完整 HTML，保存到 session 文件，返回路径 + 预览 |
-| `screenshot` | `path?` | 截图压缩后保存到 session 目录，同时返回 base64 给模型 |
+| `screenshot` | `selector?`, `fullPage?`, `path?` | 截图压缩后保存到 session 目录，同时返回 base64 给模型。支持全页截图和元素截图 |
 | `search` | `text` | Bing 搜索快捷方式，返回结果文本 |
+
+**交互操作**
+
+| Action | 参数 | 说明 |
+|--------|------|------|
+| `click` | `selector`, `doubleClick?`, `button?`, `modifiers?`, `delayMs?` | 点击元素。`button` 支持 left/right/middle，`modifiers` 支持 Ctrl/Shift/Alt/Meta |
+| `fill` | `selector`, `text` | 直接设置输入框 value（快速，适合大多数场景） |
+| `type` | `selector`, `text`, `slowly?` | 逐字符模拟键盘输入，触发 keydown/keyup 事件（适合只响应键盘事件的输入框） |
+| `pressKey` | `key`, `delayMs?` | 模拟键盘按键，如 `Enter`、`Tab`、`Escape`、`ArrowDown` 等 |
+| `hover` | `selector` | 鼠标悬停，触发 hover 状态 |
+| `scroll` | `selector` | 滚动元素到可视区域 |
+| `evaluate` | `fn` | 在页面上下文执行任意 JS 字符串，返回结果。带超时保护（默认 20s），防止阻塞 playwright 命令队列 |
+
+**等待**
+
+| Action | 参数 | 说明 |
+|--------|------|------|
+| `wait` | `text?`, `textGone?`, `selector?`, `url?`, `loadState?`, `timeMs?` | 等待条件满足后继续。支持等待文本出现/消失、selector 可见、URL 变化、页面加载状态（load/domcontentloaded/networkidle） |
+
+**会话管理**
+
+| Action | 参数 | 说明 |
+|--------|------|------|
 | `close` | — | 断开连接，重置状态 |
 
 ### 2.3 反爬策略
@@ -117,6 +140,7 @@ src/tools/BrowserTool/
 
 - 截图后自动压缩：最大边 2000px，超出则缩放
 - 优先保持 PNG，超过 5MB 时转 JPEG 并降质量
+- 支持全页截图（`fullPage: true`）和元素截图（`selector` 指定元素）
 - 保存到 `~/.pi/sessions/{sessionId}/screenshots/screenshot-{timestamp}.{ext}`
 - 返回两个 block：
   - `{ type: 'text', text: '截图已保存: /path/to/file' }`
@@ -125,6 +149,13 @@ src/tools/BrowserTool/
 ### 2.5 snapshot action
 
 使用 playwright 的 `page.accessibility.snapshot()` 获取页面 aria 树，格式化为可读文本返回给模型。适合理解页面结构、定位元素，比 CSS selector 更稳定。
+
+### 2.6 evaluate action
+
+在页面上下文执行任意 JS 字符串。参考 openclaw 的超时保护设计：
+- 外层超时（默认 20s）控制整个请求
+- 内层在浏览器上下文注入 `Promise.race` 超时，防止 async 函数永久阻塞 playwright 命令队列
+- 支持 `abortSignal`，中止时强制断开 playwright 连接
 
 ### 2.6 浏览器连接管理
 
