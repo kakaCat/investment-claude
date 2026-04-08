@@ -4,7 +4,7 @@
 
 import React, { useMemo } from 'react'
 import { Box, Text } from 'ink'
-import type { Message, TextContent } from '../types/message.js'
+import type { Message, TextContent, ThinkingContent } from '../types/message.js'
 import type { Tool } from '../Tool.js'
 import { findTool } from '../tools/index.js'
 import { getAssistantText, getToolUses } from '../utils/messages.js'
@@ -29,6 +29,18 @@ function UserBubble({ text }: { text: string }) {
         You:{' '}
       </Text>
       <Text>{text}</Text>
+    </Box>
+  )
+}
+
+function ThinkingBlock({ text }: { text: string }) {
+  const preview = text.length > 300 ? text.slice(0, 300) + '…' : text
+  return (
+    <Box marginBottom={1} flexDirection="column" paddingLeft={2}>
+      <Text color="gray" dimColor>◆ Thinking</Text>
+      <Box borderStyle="round" borderColor="gray" paddingX={1}>
+        <Text color="gray" dimColor wrap="wrap">{preview}</Text>
+      </Box>
     </Box>
   )
 }
@@ -113,7 +125,7 @@ export function Messages({ messages, tools }: Props) {
       if (msg.type === 'user') {
         for (const c of msg.content) {
           if (c.type === 'tool_result') {
-            map.set(c.tool_use_id, c.content)
+            map.set(c.tool_use_id, typeof c.content === 'string' ? c.content : '')
           }
         }
       }
@@ -128,7 +140,7 @@ export function Messages({ messages, tools }: Props) {
       if (msg.type === 'user') {
         for (const c of msg.content) {
           if (c.type === 'tool_result') {
-            const isError = isToolResultErrorContent(c.content)
+            const isError = isToolResultErrorContent(typeof c.content === 'string' ? c.content : '')
             map.set(c.tool_use_id, isError ? 'error' : 'success')
           }
         }
@@ -149,6 +161,7 @@ export function Messages({ messages, tools }: Props) {
 
         if (msg.type === 'assistant') {
           const toolUses = getToolUses(msg)
+          const thinkingBlocks = msg.content.filter((c): c is ThinkingContent => c.type === 'thinking')
           // Text that appears AFTER the last tool_use is the final reply — show it.
           // Text that appears BEFORE any tool_use is pre-tool narration — hide it.
           const lastToolUseIdx = msg.content.reduce(
@@ -162,9 +175,9 @@ export function Messages({ messages, tools }: Props) {
             .join('')
           return (
             <Box key={i} flexDirection="column">
-              {toolUses.length === 0 && getAssistantText(msg) && (
-                <AssistantBubble text={getAssistantText(msg)} />
-              )}
+              {thinkingBlocks.map((t, j) => (
+                <ThinkingBlock key={j} text={t.thinking} />
+              ))}
               {toolUses.map((t, j) => (
                 <ToolCallBlock
                   key={j}
