@@ -31,9 +31,12 @@ import { DiscoverSkillsTool } from './DiscoverSkillsTool/DiscoverSkillsTool.js'
 import { AgentTool } from './AgentTool/AgentTool.js'
 import { ExitTool } from './ExitTool/ExitTool.js'
 import { WebFetchTool } from './WebFetchTool/WebFetchTool.js'
+import { SnipTool } from './SnipTool/SnipTool.js'
+import { BrowserTool } from './BrowserTool/BrowserTool.js'
 
 // 内置工具静态列表 — 新增工具在此 import + 加入数组
 const BUILTIN_TOOLS: Tool[] = [
+  SnipTool,
   AgentTool,
   ExitTool,
   BashTool,
@@ -43,6 +46,7 @@ const BUILTIN_TOOLS: Tool[] = [
   GlobTool,
   GrepTool,
   WebFetchTool,
+  BrowserTool,
   AskUserQuestionTool,
   SendUserFileTool,
   EnterPlanModeTool,
