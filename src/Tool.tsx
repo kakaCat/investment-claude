@@ -4,6 +4,7 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 import type { AppState } from './state/AppState.js'
+import type { ToolResultContent } from './types/message.js'
 
 /** 工具执行上下文（对标 Claude Code ToolUseContext） */
 export type ToolUseContext = {
@@ -86,6 +87,16 @@ export interface Tool {
   isReadOnly(): boolean
   /** 执行工具，返回结果字符串 */
   call(input: unknown, context: ToolUseContext): Promise<string>
+  /**
+   * 执行工具，返回 text/image block 数组（用于截图等需要返回图片的工具）。
+   * 优先级高于 call()。未实现时框架回退到 call()。
+   */
+  callWithBlocks?(input: unknown, context: ToolUseContext): Promise<ToolResultContent['content']>
+  /**
+   * Layer 1 budget: result 超过此字符数时写磁盘并返回预览。
+   * Infinity = opt-out（工具自己管理截断）。默认 50_000。
+   */
+  maxResultSizeChars?: number
   /** 工具调用时展示的 Ink UI */
   renderToolUse(input: unknown): React.ReactNode
   /** 工具结果展示的 Ink UI */
@@ -115,6 +126,7 @@ export function buildTool(def: ToolDef): Tool {
     isEnabled: () => true,
     isReadOnly: () => false,
     deferLoading: false,
+    maxResultSizeChars: 50_000,
     renderToolUse: (input) => defaultRenderToolUse(def.name, input),
     renderToolResult: (result) => defaultRenderToolResult(result),
     ...def,
