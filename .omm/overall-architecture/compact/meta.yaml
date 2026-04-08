@@ -1,0 +1,12 @@
+created: 2026-04-06T11:34:16.986Z
+updated: 2026-04-06T11:34:25.153Z
+update_count: 2
+last_field: diagram
+kind: nested-class
+title: compact
+children:
+  - auto-compact
+  - compact-core
+  - compact-prompt
+  - session-memory-compact
+parentPath: []

@@ -49,8 +49,15 @@ async function main() {
 
 Usage:
   pi              Start interactive session
+  pi gateway      Start Feishu gateway (long connection mode)
   pi --version    Show version
   pi --help       Show this help`)
+    process.exit(0)
+  }
+
+  if (args[0] === 'gateway') {
+    const { gatewayCmd } = await import('../gateway/cmd.js')
+    await gatewayCmd()
     process.exit(0)
   }
 

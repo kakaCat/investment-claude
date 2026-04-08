@@ -35,3 +35,12 @@ You have a persistent memory system accessible via the \`memory_search\` tool (s
 - \`memory_search({ query: "type:<typeName>" })\` — list all memories of a type (including subtypes)
 
 When you discover information worth remembering, write it to a memory file using \`write_file\` or \`edit_file\`. Memory files use YAML frontmatter with \`name\`, \`description\`, \`type\`, and optional \`searchHint\` fields. Four built-in types: user / feedback / project / reference. Custom types can be created.`
+
+
+export const SNIP_NUDGE = `## Context Management
+
+You can use the \`snip\` tool to remove messages from the conversation context that are no longer needed. Each user message has an \`[id:xxx]\` tag appended — pass those IDs to snip to free up context space.
+
+Example: \`snip({ message_ids: ["abc123", "def456"] })\`
+
+Use snip proactively when you notice old messages (e.g. large tool results, resolved questions) that are no longer relevant to the current task.`

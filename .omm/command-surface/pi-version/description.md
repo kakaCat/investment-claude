@@ -1,0 +1,1 @@
+--version / -v flag. Prints "pi 0.1.0" and exits. No API key required. Leaf.

@@ -1,0 +1,11 @@
+graph LR
+    classDef store fill:#a6e3a1,stroke:#a6e3a1,color:#1e1e2e
+
+    cron-scheduler["Cron Scheduler\nsrc/cron/cronScheduler.ts"]
+    cron-store["Cron Store\nsrc/cron/cronStore.ts"]
+    cron-logic["Cron Logic\nsrc/cron/cron.ts"]
+    cron-file["Cron Jobs File\n~/.pi/cron.json"]:::store
+
+    cron-scheduler -->|"polls and fires"| cron-logic
+    cron-logic -->|"reads/writes jobs via"| cron-store
+    cron-store -->|"persists to"| cron-file

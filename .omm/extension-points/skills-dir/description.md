@@ -1,0 +1,1 @@
+Skills directory (~/.claude/plugins/). Markdown files containing prompt templates (skills). Discovered by DiscoverSkillsTool, loaded and injected by SkillTool. Organized in marketplaces/ subdirectories. Leaf.

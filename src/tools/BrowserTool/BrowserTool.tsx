@@ -5,10 +5,12 @@ import { mkdir, writeFile } from 'fs/promises'
 import { buildTool } from '../../Tool.js'
 import { getSessionId } from '../../bootstrap/state.js'
 import type { ToolResultContent } from '../../types/message.js'
-import { connectCDP, getPage, closeAll } from './browser.js'
+import { connectCDP, getPage, closeAll, checkConnectionHealth } from './browser.js'
 import { normalizeBrowserScreenshot } from './screenshot.js'
 import { BROWSER_DESCRIPTION, BROWSER_SEARCH_HINT } from './prompt.js'
 import { BrowserToolUseUI, BrowserToolResultUI } from './UI.js'
+
+const GLOBAL_TIMEOUT_MS = 30_000 // 全局超时 30 秒
 
 function getScreenshotDir(): string {
   return join(homedir(), '.pi', 'sessions', getSessionId(), 'screenshots')
@@ -18,8 +20,23 @@ function getSessionFileDir(): string {
   return join(homedir(), '.pi', 'sessions', getSessionId(), 'browser')
 }
 
+/**
+ * 为异步操作添加全局超时保护，防止无限阻塞
+ */
+function withGlobalTimeout<T>(fn: () => Promise<T>): Promise<T> {
+  return Promise.race([
+    fn(),
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Browser action timed out after ${GLOBAL_TIMEOUT_MS}ms`)), GLOBAL_TIMEOUT_MS),
+    ),
+  ])
+}
+
 async function handleAction(input: Record<string, unknown>): Promise<ToolResultContent['content']> {
   const action = String(input.action ?? '')
+
+  // 检查连接健康状态
+  await checkConnectionHealth()
 
   // ── connect ──────────────────────────────────────────────────────────────────
   if (action === 'connect') {
@@ -39,19 +56,28 @@ async function handleAction(input: Record<string, unknown>): Promise<ToolResultC
     const url = String(input.url ?? '')
     if (!url) throw new Error('navigate requires url')
     const page = await getPage()
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
-    const title = await page.title()
-    const text = await page.evaluate(() => document.body?.innerText ?? '')
-    const preview = text.slice(0, 2000)
-    return `Title: ${title}\n\n${preview}${text.length > 2000 ? '\n...(truncated)' : ''}`
+    try {
+      // 等待 networkidle 确保页面完全加载
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 30_000 })
+      const title = await page.title()
+      const text = await page.evaluate(() => document.body?.innerText ?? '')
+      const preview = text.slice(0, 2000)
+      return `Title: ${title}\n\n${preview}${text.length > 2000 ? '\n...(truncated)' : ''}`
+    } catch (err) {
+      throw new Error(`Navigation to "${url}" failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   // ── snapshot ─────────────────────────────────────────────────────────────────
   if (action === 'snapshot') {
     const page = await getPage()
-    const snapshot = await (page as any).accessibility.snapshot()
-    if (!snapshot) return 'No accessibility snapshot available.'
-    return JSON.stringify(snapshot, null, 2).slice(0, 8000)
+    try {
+      const snapshot = await (page as any).accessibility?.snapshot?.()
+      if (!snapshot) return 'No accessibility snapshot available.'
+      return JSON.stringify(snapshot, null, 2).slice(0, 8000)
+    } catch (err) {
+      return `Accessibility snapshot not available: ${err instanceof Error ? err.message : String(err)}`
+    }
   }
 
   // ── getText ───────────────────────────────────────────────────────────────────
@@ -123,20 +149,23 @@ async function handleAction(input: Record<string, unknown>): Promise<ToolResultC
     const page = await getPage()
     const locator = page.locator(selector).first()
     const delayMs = typeof input.delayMs === 'number' ? input.delayMs : 0
-    if (delayMs > 0) {
-      await locator.hover({ timeout: 8000 })
-      await new Promise(r => setTimeout(r, Math.min(delayMs, 5000)))
+    const button = (input.button as 'left' | 'right' | 'middle') ?? 'left'
+    const modifiers = (input.modifiers as Array<'Alt' | 'Control' | 'ControlOrMeta' | 'Meta' | 'Shift'>) ?? []
+
+    try {
+      if (delayMs > 0) {
+        await locator.hover({ timeout: 8000 })
+        await new Promise(r => setTimeout(r, Math.min(delayMs, 5000)))
+      }
+      if (input.doubleClick) {
+        await locator.dblclick({ timeout: 8000, button, modifiers })
+      } else {
+        await locator.click({ timeout: 8000, button, modifiers })
+      }
+      return `Clicked: ${selector}`
+    } catch (err) {
+      throw new Error(`Click failed on "${selector}": ${err instanceof Error ? err.message : String(err)}`)
     }
-    if (input.doubleClick) {
-      await locator.dblclick({ timeout: 8000, button: (input.button as any) ?? 'left' })
-    } else {
-      await locator.click({
-        timeout: 8000,
-        button: (input.button as any) ?? 'left',
-        modifiers: (input.modifiers as any) ?? [],
-      })
-    }
-    return `Clicked: ${selector}`
   }
 
   // ── fill ──────────────────────────────────────────────────────────────────────
@@ -145,8 +174,12 @@ async function handleAction(input: Record<string, unknown>): Promise<ToolResultC
     const text = String(input.text ?? '')
     if (!selector) throw new Error('fill requires selector')
     const page = await getPage()
-    await page.locator(selector).first().fill(text, { timeout: 8000 })
-    return `Filled: ${selector}`
+    try {
+      await page.locator(selector).first().fill(text, { timeout: 8000 })
+      return `Filled: ${selector}`
+    } catch (err) {
+      throw new Error(`Fill failed on "${selector}": ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   // ── type ──────────────────────────────────────────────────────────────────────
@@ -155,10 +188,14 @@ async function handleAction(input: Record<string, unknown>): Promise<ToolResultC
     const text = String(input.text ?? '')
     if (!selector) throw new Error('type requires selector')
     const page = await getPage()
-    const locator = page.locator(selector).first()
-    await locator.click({ timeout: 8000 })
-    await locator.pressSequentially(text, { delay: input.slowly ? 80 : 0 })
-    return `Typed into: ${selector}`
+    try {
+      const locator = page.locator(selector).first()
+      await locator.click({ timeout: 8000 })
+      await locator.pressSequentially(text, { delay: input.slowly ? 80 : 0 })
+      return `Typed into: ${selector}`
+    } catch (err) {
+      throw new Error(`Type failed on "${selector}": ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   // ── pressKey ──────────────────────────────────────────────────────────────────
@@ -176,8 +213,12 @@ async function handleAction(input: Record<string, unknown>): Promise<ToolResultC
     const selector = String(input.selector ?? '')
     if (!selector) throw new Error('hover requires selector')
     const page = await getPage()
-    await page.locator(selector).first().hover({ timeout: 8000 })
-    return `Hovered: ${selector}`
+    try {
+      await page.locator(selector).first().hover({ timeout: 8000 })
+      return `Hovered: ${selector}`
+    } catch (err) {
+      throw new Error(`Hover failed on "${selector}": ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   // ── scroll ────────────────────────────────────────────────────────────────────
@@ -185,33 +226,42 @@ async function handleAction(input: Record<string, unknown>): Promise<ToolResultC
     const selector = String(input.selector ?? '')
     if (!selector) throw new Error('scroll requires selector')
     const page = await getPage()
-    await page.locator(selector).first().scrollIntoViewIfNeeded({ timeout: 8000 })
-    return `Scrolled into view: ${selector}`
+    try {
+      await page.locator(selector).first().scrollIntoViewIfNeeded({ timeout: 8000 })
+      return `Scrolled into view: ${selector}`
+    } catch (err) {
+      throw new Error(`Scroll failed on "${selector}": ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   // ── wait ──────────────────────────────────────────────────────────────────────
   if (action === 'wait') {
     const page = await getPage()
     const timeout = 20_000
-    if (typeof input.timeMs === 'number') {
-      await page.waitForTimeout(Math.min(input.timeMs, 30_000))
+    try {
+      if (typeof input.timeMs === 'number') {
+        await page.waitForTimeout(Math.min(input.timeMs, 30_000))
+      }
+      if (input.text) {
+        await page.getByText(String(input.text)).first().waitFor({ state: 'visible', timeout })
+      }
+      if (input.textGone) {
+        await page.getByText(String(input.textGone)).first().waitFor({ state: 'hidden', timeout })
+      }
+      if (input.selector) {
+        await page.locator(String(input.selector)).first().waitFor({ state: 'visible', timeout })
+      }
+      if (input.url) {
+        await page.waitForURL(String(input.url), { timeout })
+      }
+      if (input.loadState) {
+        const state = input.loadState as 'load' | 'domcontentloaded' | 'networkidle'
+        await page.waitForLoadState(state, { timeout })
+      }
+      return 'Wait condition satisfied.'
+    } catch (err) {
+      throw new Error(`Wait condition failed: ${err instanceof Error ? err.message : String(err)}`)
     }
-    if (input.text) {
-      await page.getByText(String(input.text)).first().waitFor({ state: 'visible', timeout })
-    }
-    if (input.textGone) {
-      await page.getByText(String(input.textGone)).first().waitFor({ state: 'hidden', timeout })
-    }
-    if (input.selector) {
-      await page.locator(String(input.selector)).first().waitFor({ state: 'visible', timeout })
-    }
-    if (input.url) {
-      await page.waitForURL(String(input.url), { timeout })
-    }
-    if (input.loadState) {
-      await page.waitForLoadState(input.loadState as any, { timeout })
-    }
-    return 'Wait condition satisfied.'
   }
 
   // ── evaluate ──────────────────────────────────────────────────────────────────
@@ -221,12 +271,12 @@ async function handleAction(input: Record<string, unknown>): Promise<ToolResultC
     const page = await getPage()
     const outerTimeout = 20_000
     const evalTimeout = outerTimeout - 500
-    // 注入 Promise.race 超时，防止 async 函数永久阻塞 playwright 命令队列
+    // 使用 Function 构造器替代 eval，注入 Promise.race 超时
     const result = await page.evaluate(
       ({ fnBody, timeoutMs }) => {
         try {
-          // eslint-disable-next-line no-eval
-          const candidate = eval(`(${fnBody})`)
+          // 使用 Function 构造器而非 eval，更安全
+          const candidate = new Function(`return (${fnBody})`)()
           const ret = typeof candidate === 'function' ? candidate() : candidate
           if (ret && typeof ret.then === 'function') {
             return Promise.race([
@@ -291,12 +341,15 @@ export const BrowserTool = buildTool({
   },
   isReadOnly: () => false,
   async callWithBlocks(input) {
-    return handleAction(input as Record<string, unknown>)
+    return withGlobalTimeout(() => handleAction(input as Record<string, unknown>))
   },
   async call(input) {
-    const result = await handleAction(input as Record<string, unknown>)
+    const result = await withGlobalTimeout(() => handleAction(input as Record<string, unknown>))
     if (Array.isArray(result)) {
-      return result.filter(b => b.type === 'text').map(b => (b as any).text).join('\n')
+      return result
+        .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+        .map(b => b.text)
+        .join('\n')
     }
     return result
   },

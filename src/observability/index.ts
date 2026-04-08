@@ -1,8 +1,7 @@
 import { registerFunctionHook } from '../hooks/index.js'
 import { getSessionId, getWorkDir, getWorkspaceDir } from '../bootstrap/state.js'
 import { getSystemPrompt } from '../constants/prompts.js'
-import { initLogger, appendEvent, getLogFilePath, getHtmlFilePath } from './logger.js'
-import { generateReport } from './htmlReport.js'
+import { initLogger, appendEvent } from './logger.js'
 
 const MAX_FIELD_LEN = 2000
 
@@ -99,7 +98,7 @@ export function initObservability(): void {
     })
   })
 
-  // Stop — record session_end with full messages[], then generate HTML report
+  // Stop — record session_end with full messages[]
   registerFunctionHook('Stop', async (input) => {
     if (input.hook_event_name !== 'Stop') return
     try {
@@ -109,13 +108,8 @@ export function initObservability(): void {
         messages: input.messages ?? [],
         ts: Date.now(),
       })
-      const jsonlPath = getLogFilePath()
-      const htmlPath = getHtmlFilePath()
-      if (jsonlPath && htmlPath) {
-        await generateReport(jsonlPath, htmlPath)
-      }
     } catch {
-      // silent — JSONL file preserved even if HTML fails
+      // silent
     }
   })
 }

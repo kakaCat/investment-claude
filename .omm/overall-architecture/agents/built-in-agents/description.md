@@ -1,0 +1,1 @@
+Built-in agent definitions (src/agents/built-in/): generalPurposeAgent.ts, exploreAgent.ts, planAgent.ts. Each exports an AgentDefinition with name, description, system prompt, and allowed tool list. Leaf.

@@ -9,6 +9,7 @@ export const GlobTool = buildTool({
   name: 'glob',
   description: DESCRIPTION,
   searchHint: SEARCH_HINT,
+  maxResultSizeChars: Infinity, // 文件列表天然有界
   inputSchema: {
     type: 'object',
     properties: {

@@ -8,9 +8,9 @@ const HOOK_EVENT_SET = new Set<HookEvent>(HOOK_EVENTS)
 
 export function loadHooksSettings(): HooksSettings {
   const sources = [
-    join(homedir(), '.claude', 'settings.json'),
-    join(process.cwd(), '.claude', 'settings.json'),
-    join(process.cwd(), '.claude', 'settings.local.json'),
+    join(homedir(), '.pi', 'settings.json'),
+    join(process.cwd(), '.pi', 'settings.json'),
+    join(process.cwd(), '.pi', 'settings.local.json'),
   ]
 
   const merged: HooksSettings = {}

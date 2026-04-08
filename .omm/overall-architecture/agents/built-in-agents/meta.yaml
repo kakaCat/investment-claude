@@ -1,0 +1,9 @@
+created: 2026-04-06T11:34:09.031Z
+updated: 2026-04-06T11:34:09.032Z
+update_count: 1
+last_field: description
+kind: nested-class
+title: built-in-agents
+children: []
+parentPath:
+  - agents

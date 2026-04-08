@@ -3,7 +3,7 @@
 
 import { homedir } from 'os'
 import { join } from 'path'
-import { randomUUID } from 'crypto'
+import { getSessionId as generateSessionId } from '../tasks/sessionId.js'
 
 export type State = {
   originalCwd: string   // 启动时的工作目录
@@ -14,7 +14,7 @@ export type State = {
   workspaceDir: string  // .pi/sessions/{sessionId}/workspace/
 }
 
-const _sessionId = randomUUID()
+const _sessionId = generateSessionId()
 
 const state: State = {
   originalCwd: process.cwd(),

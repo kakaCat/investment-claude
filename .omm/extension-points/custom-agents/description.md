@@ -1,0 +1,1 @@
+Custom agent definitions (~/.claude/agents/). Markdown files with frontmatter defining agent name, description, system prompt, and tool list. Loaded by loadAgents.ts and merged with built-in agents. No code required — pure configuration. Leaf.

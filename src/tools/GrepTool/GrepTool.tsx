@@ -12,6 +12,7 @@ export const GrepTool = buildTool({
   name: 'grep',
   description: DESCRIPTION,
   searchHint: SEARCH_HINT,
+  maxResultSizeChars: Infinity, // 自己管理截断（MAX_RESULTS = 100）
   inputSchema: {
     type: 'object',
     properties: {

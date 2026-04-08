@@ -1,0 +1,9 @@
+created: 2026-04-06T11:33:39.849Z
+updated: 2026-04-06T11:33:39.850Z
+update_count: 1
+last_field: description
+kind: nested-class
+title: plan-tools
+children: []
+parentPath:
+  - tools

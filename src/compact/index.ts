@@ -1,7 +1,8 @@
 // Core compaction logic
 // Port of Claude Code src/services/compact/compact.ts (simplified)
 
-import Anthropic from '@anthropic-ai/sdk'
+import type Anthropic from '@anthropic-ai/sdk'
+import { createAnthropicClient } from '../anthropic.js'
 import {
   getCompactPrompt,
   getCompactUserSummaryMessage,
@@ -48,11 +49,9 @@ async function callCompactApi(
   promptText: string,
   abortSignal?: AbortSignal,
 ): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  const baseURL = process.env.PI_BASE_URL
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set')
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not set')
 
-  const client = new Anthropic({ apiKey, baseURL })
+  const client = createAnthropicClient()
 
   const apiMessages: Anthropic.MessageParam[] = [
     ...messages.map((m) => ({

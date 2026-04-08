@@ -1,0 +1,4 @@
+- ANTHROPIC_API_KEY must be set in environment or .env file
+- Node.js ESM modules only (type: "module" in package.json)
+- Ink renders to terminal stdout — incompatible with gateway mode (no TTY)
+- Gateway mode reads config from ~/.pi/settings.json or .pi/settings.json

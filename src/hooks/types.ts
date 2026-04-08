@@ -229,4 +229,9 @@ export type AggregatedHookResult = {
   systemMessage?: string
   initialUserMessage?: string
   watchPaths?: string[]
+  /**
+   * Stop hook 返回的阻塞错误消息，注入对话后重新触发模型（对标 CC blockingErrors）。
+   * 每条是一个 user message，内容描述 hook 检测到的问题。
+   */
+  blockingErrors?: import('../types/message.js').UserMessage[]
 }

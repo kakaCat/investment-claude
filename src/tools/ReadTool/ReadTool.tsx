@@ -11,6 +11,7 @@ export const ReadTool = buildTool({
   name: 'read_file',
   description: DESCRIPTION,
   searchHint: SEARCH_HINT,
+  maxResultSizeChars: Infinity, // 自己管理截断（MAX_CHARS = 20_000）
   inputSchema: {
     type: 'object',
     properties: {

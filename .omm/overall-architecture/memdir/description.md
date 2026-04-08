@@ -1,0 +1,1 @@
+Memory system (src/memdir/). Manages persistent memory files in a user-configured directory. Supports typed memories (user, feedback, project, reference, and custom types). Provides scan, search with keyword scoring, and type registry. Used by MemorySearchTool.

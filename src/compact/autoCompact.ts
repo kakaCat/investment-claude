@@ -17,14 +17,20 @@ const DEFAULT_THRESHOLD = CONTEXT_WINDOW - MAX_OUTPUT_TOKENS_RESERVE - AUTOCOMPA
 
 const MAX_CONSECUTIVE_FAILURES = 3
 
-// ── Module state ──────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-let consecutiveFailures = 0
+/** Per-query tracking state — passed in and returned, never module-level global */
+export type AutoCompactTracking = {
+  consecutiveFailures: number
+}
+
+export function createAutoCompactTracking(): AutoCompactTracking {
+  return { consecutiveFailures: 0 }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 export function getAutoCompactThreshold(): number {
-  // Allow env override for easier testing
   const override = process.env.CLAUDE_AUTOCOMPACT_THRESHOLD
   if (override) {
     const parsed = parseInt(override, 10)
@@ -33,9 +39,9 @@ export function getAutoCompactThreshold(): number {
   return DEFAULT_THRESHOLD
 }
 
-export function shouldAutoCompact(messages: Message[]): boolean {
+export function shouldAutoCompact(messages: Message[], snipTokensFreed = 0): boolean {
   if (process.env.DISABLE_AUTO_COMPACT === '1') return false
-  const tokens = roughTokenCount(messages)
+  const tokens = roughTokenCount(messages) - snipTokensFreed
   return tokens >= getAutoCompactThreshold()
 }
 
@@ -43,14 +49,16 @@ export function shouldAutoCompact(messages: Message[]): boolean {
 
 export async function autoCompactIfNeeded(
   messages: Message[],
-): Promise<{ wasCompacted: boolean; result?: CompactResult }> {
-  if (!shouldAutoCompact(messages)) {
-    return { wasCompacted: false }
+  tracking: AutoCompactTracking,
+  options: { snipTokensFreed?: number } = {},
+): Promise<{ wasCompacted: boolean; result?: CompactResult; tracking: AutoCompactTracking }> {
+  if (!shouldAutoCompact(messages, options.snipTokensFreed ?? 0)) {
+    return { wasCompacted: false, tracking }
   }
 
   // Circuit breaker: stop retrying after N consecutive failures
-  if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-    return { wasCompacted: false }
+  if (tracking.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+    return { wasCompacted: false, tracking }
   }
 
   const threshold = getAutoCompactThreshold()
@@ -59,8 +67,7 @@ export async function autoCompactIfNeeded(
   try {
     const smResult = await trySessionMemoryCompaction(messages, threshold)
     if (smResult) {
-      consecutiveFailures = 0
-      return { wasCompacted: true, result: smResult }
+      return { wasCompacted: true, result: smResult, tracking: { consecutiveFailures: 0 } }
     }
   } catch {
     // SM failure is non-fatal — fall through to full compact
@@ -69,14 +76,11 @@ export async function autoCompactIfNeeded(
   // Full compaction (API call)
   try {
     const result = await compactConversation(messages, { isAutoCompact: true })
-    consecutiveFailures = 0
-    return { wasCompacted: true, result }
+    return { wasCompacted: true, result, tracking: { consecutiveFailures: 0 } }
   } catch {
-    consecutiveFailures++
-    return { wasCompacted: false }
+    return {
+      wasCompacted: false,
+      tracking: { consecutiveFailures: tracking.consecutiveFailures + 1 },
+    }
   }
-}
-
-export function resetAutoCompactState(): void {
-  consecutiveFailures = 0
 }

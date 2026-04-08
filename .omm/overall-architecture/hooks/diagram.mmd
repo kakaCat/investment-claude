@@ -1,0 +1,10 @@
+graph LR
+    hook-registry["Hook Registry\nsrc/hooks/registry.ts"]
+    hook-executor["Hook Executor\nsrc/hooks/executor.ts"]
+    hook-events["Hook Events\nsrc/hooks/events.ts"]
+    hook-settings["Hook Settings\nsrc/hooks/settings.ts"]
+    hook-types["Hook Types\nsrc/hooks/types.ts"]
+
+    hook-events -->|"calls"| hook-executor
+    hook-executor -->|"looks up handlers in"| hook-registry
+    hook-settings -->|"loads shell hooks into"| hook-registry

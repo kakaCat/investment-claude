@@ -1,0 +1,1 @@
+Core async generator loop (src/query.ts). Drives multi-turn conversations: calls Anthropic API in streaming mode, accumulates assistant content, executes tools, injects tool results, fires hooks at lifecycle points (PreToolUse, PostToolUse, Stop), handles max_tokens recovery, and auto-compacts when needed.

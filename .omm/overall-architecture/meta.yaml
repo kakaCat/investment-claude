@@ -1,0 +1,23 @@
+created: 2026-04-06T11:30:59.867Z
+updated: 2026-04-06T11:31:36.096Z
+update_count: 5
+last_field: concern
+git_commit: 8953f3c
+git_branch: feat/memory-system
+children:
+  - agents
+  - anthropic-api
+  - cli-entry
+  - compact
+  - cron
+  - fs-store
+  - gateway
+  - hooks
+  - memdir
+  - observability
+  - plugins
+  - query-engine
+  - repl-screen
+  - session-memory
+  - skills
+  - tools
