@@ -6,7 +6,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { randomUUID } from 'crypto'
 import { createAnthropicClient } from './anthropic.js'
 import type { Tool, ToolUseContext } from './Tool.js'
-import type { Message, StreamEvent, UserMessage, AssistantMessage } from './types/message.js'
+import type { Message, StreamEvent, UserMessage, AssistantMessage, ToolResultContent } from './types/message.js'
 import { hasUltrathinkKeyword, getThinkingParams } from './utils/thinking.js'
 import { getAppState, setAppState } from './state/AppState.js'
 import { buildTodoReminderIfNeeded } from './state/todoReminder.js'
@@ -31,6 +31,7 @@ import {
 import { registerMessageId } from './utils/messageIds.js'
 import { isSnipped } from './utils/snipStore.js'
 import { isRetryable, getRetryDelay } from './utils/apiRetry.js'
+import { modelSupportsVision } from './utils/modelCapabilities.js'
 
 // ── 类型 ──────────────────────────────────────────────────────────────────────
 
@@ -105,17 +106,29 @@ function appendIdTag(
 /**
  * 将 Pi 的 Message[] 转换为 Anthropic SDK 格式。
  * 对非 meta 的 user message 注入 [id:xxx] 标签，让模型能通过 SnipTool 引用。
+ * 不支持 vision 的模型会过滤掉 tool_result 中的 image block。
  */
-function toSDKMessages(messages: Message[]): Anthropic.MessageParam[] {
+function toSDKMessages(messages: Message[], model: string): Anthropic.MessageParam[] {
+  const supportsVision = modelSupportsVision(model)
   return messages
     .filter((msg): msg is Exclude<Message, { type: 'compact_boundary' }> => msg.type !== 'compact_boundary')
     .map((msg) => {
-      if (msg.type === 'user' && msg.uuid && !msg.isMeta) {
-        const shortId = registerMessageId(msg.uuid)
-        return {
-          role: 'user' as const,
-          content: appendIdTag(msg.content as Anthropic.MessageParam['content'], shortId),
+      if (msg.type === 'user') {
+        const content = msg.content.map(c => {
+          if (c.type !== 'tool_result' || !Array.isArray(c.content)) return c
+          const filtered = supportsVision
+            ? c.content
+            : c.content.filter(b => b.type === 'text')
+          return { ...c, content: filtered.length > 0 ? filtered : 'No text content available.' }
+        })
+        if (msg.uuid && !msg.isMeta) {
+          const shortId = registerMessageId(msg.uuid)
+          return {
+            role: 'user' as const,
+            content: appendIdTag(content as Anthropic.MessageParam['content'], shortId),
+          }
         }
+        return { role: 'user' as const, content: content as Anthropic.MessageParam['content'] }
       }
       return {
         role: msg.type as 'user' | 'assistant',
@@ -161,7 +174,7 @@ async function* streamOneTurn(
 
   const thinkingParams = getThinkingParams(model)
 
-  const sdkMessages = toSDKMessages(messages)
+  const sdkMessages = toSDKMessages(messages, model)
   const sdkTools = tools.map(toSDKTool)
 
   const stream = client.messages.stream(
@@ -180,6 +193,9 @@ async function* streamOneTurn(
 
   const assistantContent: AssistantMessage['content'] = []
   let stopReason: string | null = null
+  // stop_reason === 'tool_use' is unreliable — observe the stream directly.
+  // Set to true whenever a tool_use block arrives; used as the sole loop-exit signal.
+  let hasToolUse = false
 
   for await (const event of stream) {
     if (event.type === 'content_block_start') {
@@ -188,6 +204,7 @@ async function* streamOneTurn(
       } else if (event.content_block.type === 'thinking') {
         assistantContent.push({ type: 'thinking', thinking: '' })
       } else if (event.content_block.type === 'tool_use') {
+        hasToolUse = true
         assistantContent.push({
           type: 'tool_use',
           id: event.content_block.id,
@@ -226,7 +243,7 @@ async function* streamOneTurn(
     }
   }
 
-  return { content: assistantContent, stopReason }
+  return { content: assistantContent, stopReason: hasToolUse ? 'tool_use' : stopReason }
 }
 
 // ── 工具执行 ──────────────────────────────────────────────────────────────────
@@ -295,25 +312,32 @@ async function* executeTools(
     yield { type: 'tool_use', id: c.id, name: c.name, input: c.input }
 
     const tool = findTool(c.name, tools)
-    let result: string
+    let toolContent: ToolResultContent['content']
     if (!tool) {
-      result = `Error: tool "${c.name}" not found`
+      toolContent = `Error: tool "${c.name}" not found`
     } else {
       try {
-        result = await tool.call(c.input, context)
-        // Layer 1: 超大结果写磁盘，返回 <persisted-output> 预览
-        result = await processToolResult(
-          c.id,
-          c.name,
-          result,
-          tool.maxResultSizeChars ?? DEFAULT_MAX_RESULT_SIZE_CHARS,
-        )
+        if (tool.callWithBlocks) {
+          toolContent = await tool.callWithBlocks(c.input, context)
+        } else {
+          const raw = await tool.call(c.input, context)
+          // Layer 1: 超大结果写磁盘，返回 <persisted-output> 预览
+          toolContent = await processToolResult(
+            c.id,
+            c.name,
+            raw,
+            tool.maxResultSizeChars ?? DEFAULT_MAX_RESULT_SIZE_CHARS,
+          )
+        }
+        const resultStr = Array.isArray(toolContent)
+          ? toolContent.filter(b => b.type === 'text').map(b => (b as { type: 'text'; text: string }).text).join('\n')
+          : toolContent
         await executeHooks(
           {
             hook_event_name: 'PostToolUse',
             tool_name: c.name,
             tool_input: c.input,
-            tool_response: result,
+            tool_response: resultStr,
             session_id: sessionId,
             cwd: context.cwd,
           },
@@ -321,7 +345,7 @@ async function* executeTools(
         )
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err)
-        result = `Error: ${errMsg}`
+        toolContent = `Error: ${errMsg}`
         await executeHooks(
           {
             hook_event_name: 'PostToolUseFailure',
@@ -336,8 +360,11 @@ async function* executeTools(
       }
     }
 
-    toolResults.push({ type: 'tool_result', tool_use_id: c.id, content: result })
-    yield { type: 'tool_result', tool_use_id: c.id, content: result }
+    toolResults.push({ type: 'tool_result', tool_use_id: c.id, content: toolContent })
+    const yieldContent = Array.isArray(toolContent)
+      ? toolContent.filter(b => b.type === 'text').map(b => (b as { type: 'text'; text: string }).text).join('\n')
+      : toolContent
+    yield { type: 'tool_result', tool_use_id: c.id, content: yieldContent }
   }
 
   return toolResults
