@@ -71,7 +71,7 @@ async function collectEvents(generator: AsyncGenerator<StreamEvent>): Promise<St
   return events
 }
 
-function createTool(call: Tool['call'] = vi.fn(async () => 'ok')): Tool {
+function createTool(call: Tool['call'] = vi.fn(async () => ({ data: 'ok' }))): Tool {
   return {
     name: 'TestTool',
     description: 'test tool',
@@ -79,6 +79,11 @@ function createTool(call: Tool['call'] = vi.fn(async () => 'ok')): Tool {
     isEnabled: () => true,
     isReadOnly: () => false,
     call,
+    mapToolResultToToolResultBlockParam: (output, toolUseId) => ({
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: output as string,
+    }),
     renderToolUse: () => null,
     renderToolResult: () => null,
   }
@@ -166,7 +171,7 @@ describe('query hook integration', () => {
   })
 
   it('fires PostToolUse after a successful tool call', async () => {
-    const toolCall = vi.fn(async () => 'tool ok')
+    const toolCall = vi.fn(async () => ({ data: 'tool ok' }))
     mocks.streamMock
       .mockReturnValueOnce(createToolUseStream('tool-1', 'TestTool'))
       .mockReturnValueOnce(createStream([]))

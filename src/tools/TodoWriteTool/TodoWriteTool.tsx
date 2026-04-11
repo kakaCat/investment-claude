@@ -39,7 +39,7 @@ export const TodoWriteTool = buildTool({
     const validStatuses: TodoStatus[] = ['pending', 'in_progress', 'completed']
     for (const item of todos) {
       if (!item.content || !item.activeForm || !validStatuses.includes(item.status)) {
-        return `ERROR: Invalid todo item: ${JSON.stringify(item)}. Each item must have content, activeForm, and status (pending|in_progress|completed).`
+        return { data: `ERROR: Invalid todo item: ${JSON.stringify(item)}. Each item must have content, activeForm, and status (pending|in_progress|completed).` }
       }
     }
     const inProgressCount = todos.filter((t) => t.status === 'in_progress').length
@@ -47,6 +47,13 @@ export const TodoWriteTool = buildTool({
       console.warn(`[TodoWriteTool] Warning: ${inProgressCount} items are in_progress (recommended: at most 1)`)
     }
     context.setAppState((prev) => ({ ...prev, todos }))
-    return `Todo list updated. ${todos.length} items.`
+    return { data: `Todo list updated. ${todos.length} items.` }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

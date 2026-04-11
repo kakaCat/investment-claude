@@ -35,11 +35,24 @@ export const GlobTool = buildTool({
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      return `Error: ${msg}`
+      return {
+        data: `Error: ${msg}`,
+      }
     }
     if (matches.length === 0) {
-      return `No files matched "${pattern}"`
+      return {
+        data: `No files matched "${pattern}"`,
+      }
     }
-    return matches.sort().join('\n')
+    return {
+      data: matches.sort().join('\n'),
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

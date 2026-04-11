@@ -67,6 +67,7 @@ export type StreamEvent =
   | { type: 'thinking_delta'; delta: string }
   // --- 工具调用 ---
   | { type: 'tool_use'; id: string; name: string; input: unknown }
+  | { type: 'tool_use_ready'; toolUse: ToolUseContent }  // content_block_stop 时立刻 yield，触发并发执行
   | { type: 'tool_result'; tool_use_id: string; content: string }
   | { type: 'tool_denied'; tool_use_id: string; name: string }  // canUseTool 拒绝
   | { type: 'messages_snapshot'; messages: Message[] }          // 每轮结束时的完整消息快照（用于下一轮 API 调用）

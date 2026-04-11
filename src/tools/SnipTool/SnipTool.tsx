@@ -42,6 +42,15 @@ export const SnipTool = buildTool({
     const parts: string[] = []
     if (resolved.length > 0) parts.push(`Snipped ${resolved.length} message(s)`)
     if (unresolved.length > 0) parts.push(`Unknown IDs: ${unresolved.join(', ')}`)
-    return parts.join('. ') || 'No messages snipped'
+    return {
+      data: parts.join('. ') || 'No messages snipped',
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

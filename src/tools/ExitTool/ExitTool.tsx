@@ -33,6 +33,13 @@ export const ExitTool = buildTool({
     } else {
       process.exit(0)
     }
-    return 'Exiting session.'
+    return { data: 'Exiting session.' }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

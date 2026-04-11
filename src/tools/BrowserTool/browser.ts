@@ -1,8 +1,8 @@
 import { chromium, type Browser, type Page } from 'playwright'
 
 // 进程级单例
-let _cdpBrowser: Browser | null = null      // connect 模式
-let _launchedBrowser: Browser | null = null // 自启动模式
+let _browser: Browser | null = null
+let _mode: 'cdp' | 'launched' | 'none' = 'none'
 let _page: Page | null = null
 let _lastActivityTime = Date.now()
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000 // 5 分钟无活动自动关闭
@@ -14,15 +14,17 @@ const IDLE_TIMEOUT_MS = 5 * 60 * 1000 // 5 分钟无活动自动关闭
 export async function connectCDP(url = 'http://localhost:9222'): Promise<string> {
   await closeAll()
   try {
-    _cdpBrowser = await chromium.connectOverCDP(url)
-    const contexts = _cdpBrowser.contexts()
+    _browser = await chromium.connectOverCDP(url)
+    _mode = 'cdp'
+    const contexts = _browser.contexts()
     const pages = contexts.flatMap(ctx => ctx.pages())
     _page = pages[0] ?? await contexts[0]?.newPage() ?? null
     const title = _page ? await _page.title() : '(no page)'
     _lastActivityTime = Date.now()
     return `Connected to Chrome via CDP at ${url}. Current page: ${title}`
   } catch (err) {
-    _cdpBrowser = null
+    _browser = null
+    _mode = 'none'
     _page = null
     throw new Error(`Failed to connect to Chrome at ${url}: ${err instanceof Error ? err.message : String(err)}`)
   }
@@ -36,17 +38,18 @@ export async function getPage(): Promise<Page> {
 
   if (_page && !_page.isClosed()) return _page
 
-  if (!_launchedBrowser) {
+  if (!_browser) {
     try {
-      _launchedBrowser = await chromium.launch({
+      _browser = await chromium.launch({
         headless: false,
         args: [
           '--disable-blink-features=AutomationControlled',
           '--no-sandbox',
         ],
       })
+      _mode = 'launched'
       // 注入反检测脚本
-      const ctx = await _launchedBrowser.newContext()
+      const ctx = await _browser.newContext()
       await ctx.addInitScript(() => {
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
         // @ts-ignore
@@ -56,17 +59,19 @@ export async function getPage(): Promise<Page> {
       })
       _page = await ctx.newPage()
     } catch (err) {
-      _launchedBrowser = null
+      _browser = null
+      _mode = 'none'
       _page = null
       throw new Error(`Failed to launch browser: ${err instanceof Error ? err.message : String(err)}`)
     }
   } else {
     try {
-      const ctx = _launchedBrowser.contexts()[0]
+      const ctx = _browser.contexts()[0]
       if (!ctx) throw new Error('Browser context lost')
       _page = await ctx.newPage()
     } catch (err) {
-      _launchedBrowser = null
+      _browser = null
+      _mode = 'none'
       _page = null
       throw new Error(`Failed to create new page: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -78,21 +83,14 @@ export async function getPage(): Promise<Page> {
 /** 断开所有连接，重置状态 */
 export async function closeAll(): Promise<void> {
   _page = null
-  if (_cdpBrowser) {
+  _mode = 'none'
+  if (_browser) {
     try {
-      await _cdpBrowser.close()
-    } catch (err) {
+      await _browser.close()
+    } catch {
       // 忽略关闭错误
     }
-    _cdpBrowser = null
-  }
-  if (_launchedBrowser) {
-    try {
-      await _launchedBrowser.close()
-    } catch (err) {
-      // 忽略关闭错误
-    }
-    _launchedBrowser = null
+    _browser = null
   }
 }
 
@@ -106,7 +104,5 @@ export async function checkConnectionHealth(): Promise<void> {
 
 /** 当前连接模式 */
 export function getConnectionMode(): 'cdp' | 'launched' | 'none' {
-  if (_cdpBrowser) return 'cdp'
-  if (_launchedBrowser) return 'launched'
-  return 'none'
+  return _mode
 }

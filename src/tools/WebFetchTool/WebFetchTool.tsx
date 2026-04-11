@@ -128,7 +128,14 @@ export const WebFetchTool = buildTool({
   async call(input, _context) {
     const { url, prompt } = input as { url: string; prompt: string }
     const { markdown, error } = await fetchPage(url)
-    if (error) return error
-    return applyPrompt(url, markdown, prompt)
+    if (error) return { data: error }
+    return { data: await applyPrompt(url, markdown, prompt) }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

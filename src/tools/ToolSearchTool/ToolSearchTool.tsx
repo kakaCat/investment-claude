@@ -57,12 +57,12 @@ export const ToolSearchTool = buildTool({
     const selectMatch = query.match(/^select:(.*)$/i)
     if (selectMatch) {
       const name = selectMatch[1]!.trim()
-      if (!name) return 'ERROR: select: requires a tool name.'
+      if (!name) return { data: 'ERROR: select: requires a tool name.' }
       const found = context.tools.find(
         (t) => t.name === name && t.isEnabled(),
       )
-      if (!found) return `No tool named "${name}" found.`
-      return `Tool activated: **${found.name}** — ${found.description}`
+      if (!found) return { data: `No tool named "${name}" found.` }
+      return { data: `Tool activated: **${found.name}** — ${found.description}` }
     }
 
     // keyword search with scoring
@@ -75,11 +75,20 @@ export const ToolSearchTool = buildTool({
       .slice(0, 10)
 
     if (scored.length === 0) {
-      return `No tools matched '${query}'.`
+      return { data: `No tools matched '${query}'.` }
     }
 
-    return scored
-      .map(({ tool }) => `- **${tool.name}**: ${tool.description}`)
-      .join('\n')
+    return {
+      data: scored
+        .map(({ tool }) => `- **${tool.name}**: ${tool.description}`)
+        .join('\n'),
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

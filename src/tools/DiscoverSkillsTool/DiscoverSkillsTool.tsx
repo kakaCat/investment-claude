@@ -19,17 +19,36 @@ export const DiscoverSkillsTool = buildTool({
   async call(_input, context) {
     const dirs = getSkillDirs(context.cwd)
     if (dirs.length === 0) {
-      return 'No skill directories found. Create ~/.claude/commands/ or .claude/commands/ and add .md files.'
+      return {
+
+        data: 'No skill directories found. Create ~/.claude/commands/ or .claude/commands/ and add .md files.'
+
+      }
     }
 
     const skills = await listSkills(context.cwd)
     if (skills.length === 0) {
-      return `Skill directories found (${dirs.join(', ')}) but no .md skill files inside them.`
+      return {
+
+        data: `Skill directories found (${dirs.join(', ')}) but no .md skill files inside them.`
+
+      }
     }
 
     const lines = skills.map(s =>
       s.description ? `- **${s.name}**: ${s.description}` : `- **${s.name}**`
     )
-    return `Available skills (${skills.length}):\n\n${lines.join('\n')}`
+    return {
+
+      data: `Available skills (${skills.length}):\n\n${lines.join('\n')}`
+
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

@@ -38,7 +38,9 @@ export const GrepTool = buildTool({
     try {
       regex = new RegExp(pattern)
     } catch {
-      return `Error: invalid regex "${pattern}"`
+      return {
+        data: `Error: invalid regex "${pattern}"`,
+      }
     }
 
     const searchDir = resolve(context.cwd, path ?? '.')
@@ -52,7 +54,9 @@ export const GrepTool = buildTool({
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      return `Error listing files: ${msg}`
+      return {
+        data: `Error listing files: ${msg}`,
+      }
     }
 
     const results: string[] = []
@@ -76,9 +80,20 @@ export const GrepTool = buildTool({
     }
 
     if (results.length === 0) {
-      return `No matches for /${pattern}/`
+      return {
+        data: `No matches for /${pattern}/`,
+      }
     }
     const suffix = results.length >= MAX_RESULTS ? `\n[...limited to ${MAX_RESULTS} results]` : ''
-    return results.join('\n') + suffix
+    return {
+      data: results.join('\n') + suffix,
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

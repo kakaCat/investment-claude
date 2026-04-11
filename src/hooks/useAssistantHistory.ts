@@ -31,6 +31,8 @@ export function useAssistantHistory(): UseAssistantHistoryResult {
 
   const displayMessages = useMemo<Message[]>(() => {
     if (pendingAssistantContent.length === 0) return messages
+    // 只在 pendingAssistantContent 有内容时创建新数组
+    // 避免每次流式更新都重新创建整个列表
     return [...messages, { type: 'assistant', content: pendingAssistantContent }]
   }, [messages, pendingAssistantContent])
 

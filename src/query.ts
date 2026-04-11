@@ -6,8 +6,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { randomUUID } from 'crypto'
 import { createAnthropicClient } from './anthropic.js'
 import type { Tool, ToolUseContext } from './Tool.js'
-import type { Message, StreamEvent, UserMessage, AssistantMessage, ToolResultContent } from './types/message.js'
-import { hasUltrathinkKeyword, getThinkingParams } from './utils/thinking.js'
+import type { Message, StreamEvent, UserMessage, AssistantMessage, ToolResultContent, ToolUseContent } from './types/message.js'
+import { getThinkingParams } from './utils/thinking.js'
 import { getAppState, setAppState } from './state/AppState.js'
 import { buildTodoReminderIfNeeded } from './state/todoReminder.js'
 import { findTool } from './tools/index.js'
@@ -156,215 +156,198 @@ function getMessagesAfterCompactBoundary(messages: Message[]): Message[] {
 
 // ── 单轮流式调用（对标 Claude Code claude.ts 中的 API 流）─────────────────────
 
-/**
- * 对 API 发起一轮流式请求，累积 assistantContent 并 yield 文本 delta。
- * 返回完整的 assistantContent 供调用方追加到消息历史。
- */
-async function* streamOneTurn(
-  client: Anthropic,
-  params: {
-    model: string
-    systemPrompt: string
-    messages: Message[]
-    tools: Tool[]
-    abortSignal?: AbortSignal
-  },
-): AsyncGenerator<StreamEvent, { content: AssistantMessage['content']; stopReason: string | null }> {
-  const { model, systemPrompt, messages, tools, abortSignal } = params
-
-  const thinkingParams = getThinkingParams(model)
-
-  const sdkMessages = toSDKMessages(messages, model)
-  const sdkTools = tools.map(toSDKTool)
-
-  const stream = client.messages.stream(
-    {
-      model,
-      system: systemPrompt,
-      messages: sdkMessages,
-      tools: sdkTools,
-      max_tokens: thinkingParams.thinking
-        ? thinkingParams.max_tokens ?? 16000
-        : 16000,
-      ...(thinkingParams.thinking ? { thinking: thinkingParams.thinking } : {}),
-    },
-    { signal: abortSignal },
-  )
-
-  const assistantContent: AssistantMessage['content'] = []
-  let stopReason: string | null = null
-  // stop_reason === 'tool_use' is unreliable — observe the stream directly.
-  // Set to true whenever a tool_use block arrives; used as the sole loop-exit signal.
-  let hasToolUse = false
-
-  for await (const event of stream) {
-    if (event.type === 'content_block_start') {
-      if (event.content_block.type === 'text') {
-        assistantContent.push({ type: 'text', text: '' })
-      } else if (event.content_block.type === 'thinking') {
-        assistantContent.push({ type: 'thinking', thinking: '' })
-      } else if (event.content_block.type === 'tool_use') {
-        hasToolUse = true
-        assistantContent.push({
-          type: 'tool_use',
-          id: event.content_block.id,
-          name: event.content_block.name,
-          input: {},
-        })
-      }
-    } else if (event.type === 'content_block_delta') {
-      const last = assistantContent[assistantContent.length - 1]
-      if (!last) continue
-      if (event.delta.type === 'text_delta' && last.type === 'text') {
-        last.text += event.delta.text
-        yield { type: 'text_delta', delta: event.delta.text }
-      } else if (event.delta.type === 'thinking_delta' && last.type === 'thinking') {
-        last.thinking += event.delta.thinking
-        yield { type: 'thinking_delta', delta: event.delta.thinking }
-      } else if (event.delta.type === 'input_json_delta' && last.type === 'tool_use') {
-        // Accumulate JSON string for tool input
-        if (!('_inputJson' in last)) {
-          (last as { _inputJson?: string })._inputJson = ''
-        }
-        ;(last as { _inputJson?: string })._inputJson! += event.delta.partial_json
-      }
-    } else if (event.type === 'content_block_stop') {
-      const last = assistantContent[assistantContent.length - 1]
-      if (last?.type === 'tool_use' && '_inputJson' in last) {
-        try {
-          last.input = JSON.parse((last as { _inputJson?: string })._inputJson ?? '{}')
-        } catch {
-          last.input = {}
-        }
-        delete (last as { _inputJson?: string })._inputJson
-      }
-    } else if (event.type === 'message_delta') {
-      stopReason = event.delta.stop_reason ?? null
-    }
-  }
-
-  return { content: assistantContent, stopReason: hasToolUse ? 'tool_use' : stopReason }
-}
-
 // ── 工具执行 ──────────────────────────────────────────────────────────────────
 
 const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT = 3
 
-async function* executeTools(
-  toolUses: AssistantMessage['content'],
+// ── 权限检查辅助函数 ────────────────────────────────────────────────────────
+
+type AllowedTool = {
+  toolUse: ToolUseContent
+  tool: Tool | undefined
+}
+
+type PermissionCheckResult = {
+  allowed: AllowedTool[]
+  denied: Array<{
+    toolUse: ToolUseContent
+    reason: string
+  }>
+}
+
+async function* checkToolPermissions(
+  toolUses: ToolUseContent[],
   tools: Tool[],
   canUseTool: CanUseTool,
   context: ToolUseContext,
   sessionId: string,
-): AsyncGenerator<StreamEvent, UserMessage['content']> {
-  const toolResults: UserMessage['content'] = []
+): AsyncGenerator<StreamEvent, PermissionCheckResult> {
+  const allowed: AllowedTool[] = []
+  const denied: Array<{ toolUse: ToolUseContent; reason: string }> = []
 
-  for (const c of toolUses) {
-    if (c.type !== 'tool_use') continue
-
-    // Fire PreToolUse hook — may override permission
+  for (const toolUse of toolUses) {
+    // Fire PreToolUse hook
     const preToolHookResult = await executeHooks(
       {
         hook_event_name: 'PreToolUse',
-        tool_name: c.name,
-        tool_input: c.input,
+        tool_name: toolUse.name,
+        tool_input: toolUse.input,
         session_id: sessionId,
         cwd: context.cwd,
       },
-      { matcherQuery: c.name, signal: context.abortSignal },
+      { matcherQuery: toolUse.name, signal: context.abortSignal },
     )
 
     let permission: 'allow' | 'deny'
     if (preToolHookResult.permissionDecision === 'deny') {
       permission = 'deny'
     } else if (preToolHookResult.preventContinuation) {
-      return toolResults
+      // Early exit - return what we have so far
+      return { allowed, denied }
     } else {
-      // 权限检查（对标 Claude Code canUseTool）
-      permission = await canUseTool(c.name, c.input)
+      permission = await canUseTool(toolUse.name, toolUse.input)
     }
 
     if (permission === 'deny') {
-      yield { type: 'tool_denied', tool_use_id: c.id, name: c.name }
+      yield { type: 'tool_denied', tool_use_id: toolUse.id, name: toolUse.name }
       await executeHooks(
         {
           hook_event_name: 'PermissionDenied',
-          tool_name: c.name,
-          tool_input: c.input,
+          tool_name: toolUse.name,
+          tool_input: toolUse.input,
           session_id: sessionId,
           cwd: context.cwd,
         },
-        { matcherQuery: c.name, signal: context.abortSignal },
+        { matcherQuery: toolUse.name, signal: context.abortSignal },
       )
-      toolResults.push({
-        type: 'tool_result',
-        tool_use_id: c.id,
-        // 仍然补一条 tool_result，保证模型下一轮能看到"工具未执行"的结果。
-        content: 'Tool use was denied by the user.',
-      })
+      denied.push({ toolUse, reason: 'Permission denied by user' })
+
       if (preToolHookResult.preventContinuation) {
-        return toolResults
+        return { allowed, denied }
       }
-      continue
-    }
-
-    // 先把 tool_use 事件抛给上层 UI，再真正执行工具，便于界面即时展示。
-    yield { type: 'tool_use', id: c.id, name: c.name, input: c.input }
-
-    const tool = findTool(c.name, tools)
-    let toolContent: ToolResultContent['content']
-    if (!tool) {
-      toolContent = `Error: tool "${c.name}" not found`
     } else {
-      try {
-        if (tool.callWithBlocks) {
-          toolContent = await tool.callWithBlocks(c.input, context)
-        } else {
-          const raw = await tool.call(c.input, context)
-          // Layer 1: 超大结果写磁盘，返回 <persisted-output> 预览
-          toolContent = await processToolResult(
-            c.id,
-            c.name,
-            raw,
-            tool.maxResultSizeChars ?? DEFAULT_MAX_RESULT_SIZE_CHARS,
+      const tool = findTool(toolUse.name, tools) ?? findTool(toolUse.name, context.tools)
+      allowed.push({ toolUse, tool })
+    }
+  }
+
+  return { allowed, denied }
+}
+
+// ── 并发工具执行 ────────────────────────────────────────────────────────────
+
+async function* executeToolsConcurrently(
+  allowed: Array<{ toolUse: ToolUseContent; tool: Tool | undefined }>,
+  denied: Array<{ toolUse: ToolUseContent; reason: string }>,
+  context: ToolUseContext,
+  sessionId: string,
+): AsyncGenerator<StreamEvent, UserMessage['content']> {
+  // Step 1: Execute all allowed tools concurrently
+  const results = await Promise.allSettled(
+    allowed.map(async ({ toolUse, tool }) => {
+      let toolContent: ToolResultContent['content']
+
+      if (!tool) {
+        toolContent = `Error: tool "${toolUse.name}" not found`
+      } else {
+        try {
+          if (tool.callWithBlocks) {
+            toolContent = await tool.callWithBlocks(toolUse.input, context)
+          } else {
+            const result = await tool.call(toolUse.input, context)
+
+            // 调用 mapToolResultToToolResultBlockParam 将 Output 转换为 API 格式
+            const mappedResult = tool.mapToolResultToToolResultBlockParam(result.data, toolUse.id)
+
+            // 提取 content 并应用 processToolResult 进行持久化处理
+            const rawContent = typeof mappedResult.content === 'string'
+              ? mappedResult.content
+              : JSON.stringify(mappedResult.content)
+
+            const processedContent = await processToolResult(
+              toolUse.id,
+              toolUse.name,
+              rawContent,
+              tool.maxResultSizeChars ?? DEFAULT_MAX_RESULT_SIZE_CHARS,
+            )
+
+            // 如果原始 content 是 array，保持 array 格式；否则使用处理后的字符串
+            toolContent = Array.isArray(mappedResult.content) ? mappedResult.content : processedContent
+          }
+
+          // PostToolUse hook
+          const resultStr = Array.isArray(toolContent)
+            ? toolContent.filter(b => b.type === 'text').map(b => (b as { type: 'text'; text: string }).text).join('\n')
+            : toolContent
+          await executeHooks(
+            {
+              hook_event_name: 'PostToolUse',
+              tool_name: toolUse.name,
+              tool_input: toolUse.input,
+              tool_response: resultStr,
+              session_id: sessionId,
+              cwd: context.cwd,
+            },
+            { matcherQuery: toolUse.name, signal: context.abortSignal },
+          )
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err)
+          toolContent = `Error: ${errMsg}`
+
+          // PostToolUseFailure hook
+          await executeHooks(
+            {
+              hook_event_name: 'PostToolUseFailure',
+              tool_name: toolUse.name,
+              tool_input: toolUse.input,
+              tool_error: errMsg,
+              session_id: sessionId,
+              cwd: context.cwd,
+            },
+            { matcherQuery: toolUse.name, signal: context.abortSignal },
           )
         }
-        const resultStr = Array.isArray(toolContent)
-          ? toolContent.filter(b => b.type === 'text').map(b => (b as { type: 'text'; text: string }).text).join('\n')
-          : toolContent
-        await executeHooks(
-          {
-            hook_event_name: 'PostToolUse',
-            tool_name: c.name,
-            tool_input: c.input,
-            tool_response: resultStr,
-            session_id: sessionId,
-            cwd: context.cwd,
-          },
-          { matcherQuery: c.name, signal: context.abortSignal },
-        )
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err)
-        toolContent = `Error: ${errMsg}`
-        await executeHooks(
-          {
-            hook_event_name: 'PostToolUseFailure',
-            tool_name: c.name,
-            tool_input: c.input,
-            tool_error: errMsg,
-            session_id: sessionId,
-            cwd: context.cwd,
-          },
-          { matcherQuery: c.name, signal: context.abortSignal },
-        )
       }
+
+      return { toolUse, toolContent }
+    })
+  )
+
+  // Step 4: Build ordered tool results array (matching original order)
+  const toolResults: UserMessage['content'] = []
+
+  // First add denied tools
+  for (const { toolUse } of denied) {
+    toolResults.push({
+      type: 'tool_result',
+      tool_use_id: toolUse.id,
+      content: 'Tool use was denied by the user.',
+    })
+  }
+
+  // Then add executed tools (in original order)
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i]
+    const { toolUse } = allowed[i]
+
+    let content: ToolResultContent['content']
+    if (result.status === 'fulfilled') {
+      content = result.value.toolContent
+    } else {
+      content = `Error: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`
     }
 
-    toolResults.push({ type: 'tool_result', tool_use_id: c.id, content: toolContent })
-    const yieldContent = Array.isArray(toolContent)
-      ? toolContent.filter(b => b.type === 'text').map(b => (b as { type: 'text'; text: string }).text).join('\n')
-      : toolContent
-    yield { type: 'tool_result', tool_use_id: c.id, content: yieldContent }
+    toolResults.push({
+      type: 'tool_result',
+      tool_use_id: toolUse.id,
+      content,
+    })
+
+    // Yield tool_result event
+    const yieldContent = Array.isArray(content)
+      ? content.filter(b => b.type === 'text').map(b => (b as { type: 'text'; text: string }).text).join('\n')
+      : content
+    yield { type: 'tool_result', tool_use_id: toolUse.id, content: yieldContent }
   }
 
   return toolResults
@@ -487,17 +470,86 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
 
     yield { type: 'stream_request_start' }
 
-    // ── 单轮流式调用 ────────────────────────────────────────────────────────
-    let assistantContent: AssistantMessage['content']
-    let stopReason: string | null
+    // ── 单轮流式调用（内联逻辑，支持并发工具执行）────────────────────────────
+    let assistantContent: AssistantMessage['content'] = []
+    let stopReason: string | null = null
+    let hasToolUse = false
+    const pendingToolUses: ToolUseContent[] = []
+
     try {
-      ;({ content: assistantContent, stopReason } = yield* streamOneTurn(client, {
-        model,
-        systemPrompt,
-        messages: messagesForQuery,
-        tools,
-        abortSignal,
-      }))
+      const thinkingParams = getThinkingParams(model)
+      const sdkMessages = toSDKMessages(messagesForQuery, model)
+      const sdkTools = tools.map(toSDKTool)
+
+      const stream = client.messages.stream(
+        {
+          model,
+          system: systemPrompt,
+          messages: sdkMessages,
+          tools: sdkTools,
+          max_tokens: thinkingParams.thinking
+            ? thinkingParams.max_tokens ?? 16000
+            : 16000,
+          ...(thinkingParams.thinking ? { thinking: thinkingParams.thinking } : {}),
+        },
+        { signal: abortSignal },
+      )
+
+      for await (const event of stream) {
+        if (event.type === 'content_block_start') {
+          if (event.content_block.type === 'text') {
+            assistantContent.push({ type: 'text', text: '' })
+          } else if (event.content_block.type === 'thinking') {
+            assistantContent.push({ type: 'thinking', thinking: '' })
+          } else if (event.content_block.type === 'tool_use') {
+            hasToolUse = true
+            assistantContent.push({
+              type: 'tool_use',
+              id: event.content_block.id,
+              name: event.content_block.name,
+              input: {},
+            })
+          }
+        } else if (event.type === 'content_block_delta') {
+          const last = assistantContent[assistantContent.length - 1]
+          if (!last) continue
+          if (event.delta.type === 'text_delta' && last.type === 'text') {
+            last.text += event.delta.text
+            yield { type: 'text_delta', delta: event.delta.text }
+          } else if (event.delta.type === 'thinking_delta' && last.type === 'thinking') {
+            last.thinking += event.delta.thinking
+            yield { type: 'thinking_delta', delta: event.delta.thinking }
+          } else if (event.delta.type === 'input_json_delta' && last.type === 'tool_use') {
+            if (!('_inputJson' in last)) {
+              (last as { _inputJson?: string })._inputJson = ''
+            }
+            ;(last as { _inputJson?: string })._inputJson! += event.delta.partial_json
+          }
+        } else if (event.type === 'content_block_stop') {
+          const last = assistantContent[assistantContent.length - 1]
+          if (last?.type === 'tool_use' && '_inputJson' in last) {
+            try {
+              last.input = JSON.parse((last as { _inputJson?: string })._inputJson ?? '{}')
+            } catch {
+              last.input = {}
+            }
+            delete (last as { _inputJson?: string })._inputJson
+
+            // Collect tool_use for concurrent execution
+            pendingToolUses.push(last as ToolUseContent)
+            yield {
+              type: 'tool_use',
+              id: last.id,
+              name: last.name,
+              input: last.input,
+            }
+          }
+        } else if (event.type === 'message_delta') {
+          stopReason = event.delta.stop_reason ?? null
+        }
+      }
+
+      stopReason = hasToolUse ? 'tool_use' : stopReason
     } catch (err) {
       if (isRetryable(err) && apiRetryAttempts < 5) {
         apiRetryAttempts++
@@ -573,8 +625,21 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
       return
     }
 
-    // ── 执行工具（含权限检查）──────────────────────────────────────────────
-    const toolResultContent = yield* executeTools(assistantContent, tools, canUseTool, toolUseContext, sessionId)
+    // ── 并发执行工具（含权限检查）──────────────────────────────────────────────
+    const permissionResult = yield* checkToolPermissions(
+      pendingToolUses,
+      tools,
+      canUseTool,
+      toolUseContext,
+      sessionId,
+    )
+
+    const toolResultContent = yield* executeToolsConcurrently(
+      permissionResult.allowed,
+      permissionResult.denied,
+      toolUseContext,
+      sessionId,
+    )
 
     const toolResultMsg: UserMessage = {
       type: 'user',

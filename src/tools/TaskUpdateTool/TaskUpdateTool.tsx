@@ -40,10 +40,17 @@ export const TaskUpdateTool = buildTool({
 
     try {
       const updated = await updateTaskFile(id, updates, context)
-      if (!updated) return `ERROR: Task ${id} not found.`
-      return JSON.stringify(updated)
+      if (!updated) return { data: `ERROR: Task ${id} not found.` }
+      return { data: JSON.stringify(updated) }
     } catch (err) {
-      return `ERROR: ${err instanceof Error ? err.message : String(err)}`
+      return { data: `ERROR: ${err instanceof Error ? err.message : String(err)}` }
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
     }
   },
 })

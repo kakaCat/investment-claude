@@ -17,9 +17,24 @@ export const EnterPlanModeTool = buildTool({
   renderToolResult: (result) => <EnterPlanModeToolResultUI result={result} />,
   async call(_input, context) {
     if (!context.enterPlanMode) {
-      return 'Plan mode not available in this context.'
+      return {
+
+        data: 'Plan mode not available in this context.'
+
+      }
     }
     await context.enterPlanMode()
-    return 'Plan mode activated. Write tools are now disabled. Explore the codebase with read-only tools, then call exit_plan_mode with your complete plan.'
+    return {
+
+      data: 'Plan mode activated. Write tools are now disabled. Explore the codebase with read-only tools, then call exit_plan_mode with your complete plan.'
+
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

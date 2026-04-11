@@ -181,6 +181,8 @@ export async function runDream(
     let isDone = false
 
     for (const block of toolUseBlocks) {
+      if (block.type !== 'tool_use') continue
+
       if (block.name === 'done') {
         isDone = true
         toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: 'ok' })

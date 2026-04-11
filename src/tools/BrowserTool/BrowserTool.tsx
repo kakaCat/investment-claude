@@ -132,8 +132,7 @@ async function handleAction(input: Record<string, unknown>): Promise<ToolResultC
     const mediaType = (contentType ?? 'image/png') as 'image/png' | 'image/jpeg'
     const dir = getScreenshotDir()
     await mkdir(dir, { recursive: true })
-    const customPath = input.path ? String(input.path) : null
-    const filepath = customPath ?? join(dir, `screenshot-${Date.now()}.${ext}`)
+    const filepath = join(dir, `screenshot-${Date.now()}.${ext}`)
     await writeFile(filepath, buffer)
     const base64 = buffer.toString('base64')
     return [
@@ -303,7 +302,6 @@ export const BrowserTool = buildTool({
   name: 'browser',
   description: BROWSER_DESCRIPTION,
   searchHint: BROWSER_SEARCH_HINT,
-  deferLoading: true,
   inputSchema: {
     type: 'object',
     properties: {
@@ -319,8 +317,7 @@ export const BrowserTool = buildTool({
       key: { type: 'string', description: 'Key name for pressKey (e.g. Enter, Tab, Escape)' },
       fn: { type: 'string', description: 'JavaScript function body for evaluate' },
       fullPage: { type: 'boolean', description: 'Full page screenshot (default: false)' },
-      path: { type: 'string', description: 'Custom save path for screenshot' },
-      doubleClick: { type: 'boolean', description: 'Double click instead of single click' },
+doubleClick: { type: 'boolean', description: 'Double click instead of single click' },
       button: { type: 'string', enum: ['left', 'right', 'middle'], description: 'Mouse button' },
       modifiers: {
         type: 'array',
@@ -346,12 +343,23 @@ export const BrowserTool = buildTool({
   async call(input) {
     const result = await withGlobalTimeout(() => handleAction(input as Record<string, unknown>))
     if (Array.isArray(result)) {
-      return result
-        .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
-        .map(b => b.text)
-        .join('\n')
+      return {
+        data: result
+          .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+          .map(b => b.text)
+          .join('\n'),
+      }
     }
-    return result
+    return {
+      data: result,
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
   renderToolUse(input) {
     return <BrowserToolUseUI input={input as any} />

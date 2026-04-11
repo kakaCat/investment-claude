@@ -51,20 +51,20 @@ describe('MemorySearchTool', () => {
 
   it('search: returns matching memories', async () => {
     const result = await MemorySearchTool.call({ query: 'search:database' }, ctx as never)
-    expect(result).toContain('feedback_testing')
-    expect(result).toContain('database')
+    expect(result.data).toContain('feedback_testing')
+    expect(result.data).toContain('database')
   })
 
   it('type:feedback lists feedback memories', async () => {
     const result = await MemorySearchTool.call({ query: 'type:feedback' }, ctx as never)
-    expect(result).toContain('feedback_testing')
-    expect(result).not.toContain('user_role')
+    expect(result.data).toContain('feedback_testing')
+    expect(result.data).not.toContain('user_role')
   })
 
   it('type:user lists user memories', async () => {
     const result = await MemorySearchTool.call({ query: 'type:user' }, ctx as never)
-    expect(result).toContain('user_role')
-    expect(result).not.toContain('feedback_testing')
+    expect(result.data).toContain('user_role')
+    expect(result.data).not.toContain('feedback_testing')
   })
 
   it('select:<filename> reads full file content', async () => {
@@ -72,19 +72,19 @@ describe('MemorySearchTool', () => {
       { query: 'select:feedback_testing.md' },
       ctx as never,
     )
-    expect(result).toContain('Do not mock the database')
+    expect(result.data).toContain('Do not mock the database')
   })
 
   it('types query returns type tree', async () => {
     const result = await MemorySearchTool.call({ query: 'types' }, ctx as never)
-    expect(result).toContain('user')
-    expect(result).toContain('feedback')
-    expect(result).toContain('project')
-    expect(result).toContain('reference')
+    expect(result.data).toContain('user')
+    expect(result.data).toContain('feedback')
+    expect(result.data).toContain('project')
+    expect(result.data).toContain('reference')
   })
 
   it('returns no match message when no results', async () => {
     const result = await MemorySearchTool.call({ query: 'search:xyzzy99999' }, ctx as never)
-    expect(result).toContain('No memories')
+    expect(result.data).toContain('No memories')
   })
 })

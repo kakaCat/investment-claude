@@ -23,15 +23,38 @@ export const VerifyPlanExecutionTool = buildTool({
   async call(input, context) {
     const { summary } = input as { summary: string }
     if (!context.verifyExecution) {
-      return 'Verify execution not available in this context.'
+      return {
+
+        data: 'Verify execution not available in this context.'
+
+      }
     }
     const result = await context.verifyExecution(summary)
     if (result === 'verified') {
-      return 'Execution verified. Implementation matches the plan.'
+      return {
+
+        data: 'Execution verified. Implementation matches the plan.'
+
+      }
     }
     if (result === 'rejected') {
-      return 'Execution rejected. Please review and fix the implementation to match the plan.'
+      return {
+
+        data: 'Execution rejected. Please review and fix the implementation to match the plan.'
+
+      }
     }
-    return `Execution rejected: ${result}. Please review and fix the implementation accordingly.`
+    return {
+
+      data: `Execution rejected: ${result}. Please review and fix the implementation accordingly.`
+
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

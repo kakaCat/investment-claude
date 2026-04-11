@@ -26,9 +26,16 @@ export const SendUserFileTool = buildTool({
       await access(absPath)
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code
-      if (code === 'ENOENT') return `Error: file not found: ${absPath}`
-      return `Error: cannot access file: ${absPath} (${code ?? String(err)})`
+      if (code === 'ENOENT') return { data: `Error: file not found: ${absPath}` }
+      return { data: `Error: cannot access file: ${absPath} (${code ?? String(err)})` }
     }
-    return absPath
+    return { data: absPath }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

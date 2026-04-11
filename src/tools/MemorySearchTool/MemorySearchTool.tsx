@@ -47,7 +47,7 @@ export const MemorySearchTool = buildTool({
         return lines.join('\n')
       }
 
-      return roots.map((root) => renderNode(root.name)).filter(Boolean).join('\n')
+      return { data: roots.map((root) => renderNode(root.name)).filter(Boolean).join('\n') }
     }
 
     const typeMatch = query.match(/^type:(.+)$/i)
@@ -59,18 +59,20 @@ export const MemorySearchTool = buildTool({
       const filtered = metas.filter((meta) => subtree.includes(meta.type))
 
       if (filtered.length === 0) {
-        return `No memories found for type "${typeName}".`
+        return { data: `No memories found for type "${typeName}".` }
       }
 
       const manifestLines = formatMemoryManifest(filtered).split('\n')
-      return filtered
-        .map((meta, index) => {
-          const handler = registry.getHandler(meta.type)
-          const ageWarn = buildMemoryAgeWarning(meta.mtimeMs, handler)
-          const line = manifestLines[index] ?? ''
-          return ageWarn ? `${line}\n  ${ageWarn}` : line
-        })
-        .join('\n')
+      return {
+        data: filtered
+          .map((meta, index) => {
+            const handler = registry.getHandler(meta.type)
+            const ageWarn = buildMemoryAgeWarning(meta.mtimeMs, handler)
+            const line = manifestLines[index] ?? ''
+            return ageWarn ? `${line}\n  ${ageWarn}` : line
+          })
+          .join('\n'),
+      }
     }
 
     const selectMatch = query.match(/^select:(.+)$/i)
@@ -84,13 +86,13 @@ export const MemorySearchTool = buildTool({
       )
 
       if (!found) {
-        return `No memory file matching "${filename}" found.`
+        return { data: `No memory file matching "${filename}" found.` }
       }
 
       const content = await backend.readFile(found.filePath)
       const handler = registry.getHandler(found.type)
       const ageWarn = buildMemoryAgeWarning(found.mtimeMs, handler)
-      return ageWarn ? `${content}\n\n${ageWarn}` : content
+      return { data: ageWarn ? `${content}\n\n${ageWarn}` : content }
     }
 
     const searchMatch = query.match(/^search:(.+)$/i)
@@ -112,7 +114,7 @@ export const MemorySearchTool = buildTool({
       .slice(0, 5)
 
     if (scored.length === 0) {
-      return `No memories matched '${keywords}'.`
+      return { data: `No memories matched '${keywords}'.` }
     }
 
     const lines = await Promise.all(
@@ -124,6 +126,13 @@ export const MemorySearchTool = buildTool({
       }),
     )
 
-    return lines.join('\n\n---\n\n')
+    return { data: lines.join('\n\n---\n\n') }
+  },
+  mapToolResultToToolResultBlockParam(output, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: output,
+    }
   },
 })

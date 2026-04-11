@@ -3,7 +3,7 @@
 
 import { randomUUID } from 'crypto'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Box, Text, useInput } from 'ink'
+import { Box, Text, useInput, useStdout } from 'ink'
 import { query, type CanUseTool } from '../query.js'
 import { getSystemPrompt, initSystemPrompt, clearSectionCache, type SectionContext } from '../constants/prompts.js'
 import { clearSnipStore } from '../utils/snipStore.js'
@@ -97,6 +97,7 @@ export function maybeLogStreamingIdleWarning(
 }
 
 export function REPL(_props: Props) {
+  const { stdout } = useStdout()
   const tools = useMergedTools()
   const allTools = useMemo(() => getAllTools(getPluginTools()), [])
   const history = useAssistantHistory()
@@ -114,6 +115,7 @@ export function REPL(_props: Props) {
   const [isPartialSelectMode, setIsPartialSelectMode] = useState(false)
   const [partialSelectedIndex, setPartialSelectedIndex] = useState(0)
   const [skills, setSkills] = useState<Skill[]>([])
+  const [scrollOffset, setScrollOffset] = useState(0)
   const sessionIdRef = useRef<string>(randomUUID())
 
   // AbortController — 用于 Ctrl+C 中止当前 query（对标 Claude Code interrupt()）
@@ -289,6 +291,7 @@ export function REPL(_props: Props) {
 
       addToHistory(displayInput)
       history.appendUserMessage(displayInput)
+      setScrollOffset(0)
       setIsLoading(true)
       isLoadingRef.current = true
       history.startAssistantMessage()
@@ -577,6 +580,20 @@ export function REPL(_props: Props) {
       // Ctrl+C / ESC 中止当前 query（对标 CC chat:cancel 加载中行为）
       if (isLoading && (key.escape || (key.ctrl && input === 'c'))) {
         abortControllerRef.current?.abort('interrupt')
+        return
+      }
+
+      // 上下箭头滚动历史（空闲时）
+      if (!isLoading && !permissionRequest && !askUserRequest && !planApprovalRequest && !verifyRequest) {
+        const SCROLL_STEP = 3
+        if (key.upArrow) {
+          setScrollOffset((o) => o + SCROLL_STEP)
+          return
+        }
+        if (key.downArrow) {
+          setScrollOffset((o) => Math.max(0, o - SCROLL_STEP))
+          return
+        }
       }
     },
     { isActive: true },
@@ -588,6 +605,8 @@ export function REPL(_props: Props) {
       <Messages
         messages={history.displayMessages}
         tools={tools}
+        maxHeight={(stdout?.rows ?? 24) - 6}
+        scrollOffset={scrollOffset}
       />
 
       {/* 计划模式状态栏 */}
@@ -709,10 +728,12 @@ export function REPL(_props: Props) {
         </Box>
       )}
 
-      {/* 加载中 */}
-      {isLoading && !permissionRequest && !askUserRequest && !planApprovalRequest && !verifyRequest && <Spinner />}
+      {/* 加载中 — 始终渲染，通过 display 控制可见性避免挂载/卸载闪烁 */}
+      {isLoading && !permissionRequest && !askUserRequest && !planApprovalRequest && !verifyRequest && (
+        <Spinner />
+      )}
 
-      {/* 输入框 */}
+      {/* 输入框 — 始终渲染，通过条件控制可见性 */}
       {!isLoading && !askUserRequest && !planApprovalRequest && !verifyRequest && (
         <PromptInput onSubmit={handleSubmit} isLoading={isLoading} onExit={doExit} onCancel={() => abortControllerRef.current?.abort('interrupt')} skills={skills} />
       )}

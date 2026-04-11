@@ -21,16 +21,23 @@ export const TaskStopTool = buildTool({
   async call(input, context) {
     const { id } = input as { id: number }
     const task = context.getAppState().tasks.get(id)
-    if (!task) return `ERROR: Task ${id} not found.`
+    if (!task) return { data: `ERROR: Task ${id} not found.` }
     if (task.status === 'stopped' || task.status === 'completed') {
-      return `ERROR: Task ${id} is already ${task.status}.`
+      return { data: `ERROR: Task ${id} is already ${task.status}.` }
     }
 
     try {
       await updateTaskFile(id, { status: 'stopped', updatedAt: new Date().toISOString() }, context)
-      return 'Task stopped.'
+      return { data: 'Task stopped.' }
     } catch (err) {
-      return `ERROR: ${err instanceof Error ? err.message : String(err)}`
+      return { data: `ERROR: ${err instanceof Error ? err.message : String(err)}` }
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
     }
   },
 })
