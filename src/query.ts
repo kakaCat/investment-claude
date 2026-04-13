@@ -241,11 +241,12 @@ async function* executeToolsConcurrently(
   denied: Array<{ toolUse: ToolUseContent; reason: string }>,
   context: ToolUseContext,
   sessionId: string,
-): AsyncGenerator<StreamEvent, UserMessage['content']> {
+): AsyncGenerator<StreamEvent, { content: UserMessage['content']; toolUseResults: Record<string, unknown> }> {
   // Step 1: Execute all allowed tools concurrently
   const results = await Promise.allSettled(
     allowed.map(async ({ toolUse, tool }) => {
       let toolContent: ToolResultContent['content']
+      let toolOutput: unknown = undefined
 
       if (!tool) {
         toolContent = `Error: tool "${toolUse.name}" not found`
@@ -255,6 +256,9 @@ async function* executeToolsConcurrently(
             toolContent = await tool.callWithBlocks(toolUse.input, context)
           } else {
             const result = await tool.call(toolUse.input, context)
+
+            // 保存原始输出（用于 UI 渲染）
+            toolOutput = result.data
 
             // 调用 mapToolResultToToolResultBlockParam 将 Output 转换为 API 格式
             const mappedResult = tool.mapToolResultToToolResultBlockParam(result.data, toolUse.id)
@@ -309,12 +313,13 @@ async function* executeToolsConcurrently(
         }
       }
 
-      return { toolUse, toolContent }
+      return { toolUse, toolContent, toolOutput }
     })
   )
 
   // Step 4: Build ordered tool results array (matching original order)
   const toolResults: UserMessage['content'] = []
+  const toolUseResults: Record<string, unknown> = {}
 
   // First add denied tools
   for (const { toolUse } of denied) {
@@ -333,6 +338,10 @@ async function* executeToolsConcurrently(
     let content: ToolResultContent['content']
     if (result.status === 'fulfilled') {
       content = result.value.toolContent
+      // 保存原始输出到 toolUseResults
+      if (result.value.toolOutput !== undefined) {
+        toolUseResults[toolUse.id] = result.value.toolOutput
+      }
     } else {
       content = `Error: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`
     }
@@ -350,7 +359,7 @@ async function* executeToolsConcurrently(
     yield { type: 'tool_result', tool_use_id: toolUse.id, content: yieldContent }
   }
 
-  return toolResults
+  return { content: toolResults, toolUseResults }
 }
 
 // ── 默认 canUseTool ────────────────────────────────────────────────────────────
@@ -605,7 +614,9 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
     maxTokensRecoveryAttempts = 0
 
     // ── 检查是否有工具调用 ──────────────────────────────────────────────────
-    if (stopReason !== 'tool_use') {
+    // 使用 pendingToolUses.length 而不是 stopReason，因为 stopReason 不可靠
+    // 参考: Claude Code query.ts:554 注释
+    if (pendingToolUses.length === 0) {
       // 无工具调用 → 对话结束，轮末重建后 yield 快照
       messages = [...messagesForQuery, assistantMsg]
       yield { type: 'messages_snapshot', messages: [...messages] }
@@ -625,6 +636,14 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
       return
     }
 
+    // ── maxTurns 检查 ──────────────────────────────────────────────────────────
+    // 有工具调用，但已达到轮数上限
+    turnCount++
+    if (maxTurns && turnCount > maxTurns) {
+      yield { type: 'max_turns_reached', turnCount: maxTurns }
+      return
+    }
+
     // ── 并发执行工具（含权限检查）──────────────────────────────────────────────
     const permissionResult = yield* checkToolPermissions(
       pendingToolUses,
@@ -634,7 +653,7 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
       sessionId,
     )
 
-    const toolResultContent = yield* executeToolsConcurrently(
+    const toolResultData = yield* executeToolsConcurrently(
       permissionResult.allowed,
       permissionResult.denied,
       toolUseContext,
@@ -643,7 +662,10 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
 
     const toolResultMsg: UserMessage = {
       type: 'user',
-      content: toolResultContent,
+      content: toolResultData.content,
+      toolUseResults: Object.keys(toolResultData.toolUseResults).length > 0
+        ? toolResultData.toolUseResults
+        : undefined,
     }
 
     // Todo reminder 注入
@@ -668,13 +690,5 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
       yield { type: 'done' }
       return
     }
-
-    // maxTurns 检查
-    if (maxTurns && turnCount >= maxTurns) {
-      yield { type: 'max_turns_reached', turnCount }
-      return
-    }
-
-    turnCount++
   }
 }
