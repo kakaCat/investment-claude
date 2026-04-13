@@ -1,0 +1,1 @@
+Observability system (src/observability/). Registers function hooks to capture session events (session_start, user_prompt, tool_call, tool_result, tool_error, session_end) into a JSONL log file. Also generates HTML reports from the log. Initialized once at REPL startup.

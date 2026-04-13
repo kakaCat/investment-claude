@@ -23,15 +23,38 @@ export const ExitPlanModeTool = buildTool({
   async call(input, context) {
     const { plan } = input as { plan: string }
     if (!context.exitPlanMode) {
-      return 'Exit plan mode not available in this context.'
+      return {
+
+        data: 'Exit plan mode not available in this context.'
+
+      }
     }
     const result = await context.exitPlanMode(plan)
     if (result === 'approved') {
-      return 'Plan approved. You may now proceed with implementation using all tools.'
+      return {
+
+        data: 'Plan approved. You may now proceed with implementation using all tools.'
+
+      }
     }
     if (result === 'rejected') {
-      return 'Plan rejected. Please revise your plan and call exit_plan_mode again with the updated plan.'
+      return {
+
+        data: 'Plan rejected. Please revise your plan and call exit_plan_mode again with the updated plan.'
+
+      }
     }
-    return `Plan rejected: ${result}. Please revise your plan accordingly and call exit_plan_mode again.`
+    return {
+
+      data: `Plan rejected: ${result}. Please revise your plan accordingly and call exit_plan_mode again.`
+
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

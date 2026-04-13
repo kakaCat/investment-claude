@@ -1,0 +1,1 @@
+File operation tools: ReadTool, FileWriteTool, FileEditTool, GlobTool, GrepTool (src/tools/ReadTool/, FileWriteTool/, FileEditTool/, GlobTool/, GrepTool/). Each wraps Node.js fs/fast-glob operations with permission-aware execution. Leaf group.

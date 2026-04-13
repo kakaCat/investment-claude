@@ -1,0 +1,1 @@
+Extension points mirror Claude Code's hook and plugin system. Shell hooks allow external processes to react to lifecycle events. Custom agents allow defining new agent types without modifying source. Skills allow injecting prompt templates. All extensions are file-based — no code compilation needed.

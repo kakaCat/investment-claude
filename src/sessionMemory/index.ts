@@ -3,7 +3,8 @@
 // Replaces CC's runForkedAgent with a direct Anthropic API call
 // (only edit_file permission on the SM file)
 
-import Anthropic from '@anthropic-ai/sdk'
+import type Anthropic from '@anthropic-ai/sdk'
+import { createAnthropicClient } from '../anthropic.js'
 import { mkdir, writeFile } from 'fs/promises'
 import { registerFunctionHook } from '../hooks/index.js'
 import { getSessionMemoryDir, getSessionMemoryPath } from './path.js'
@@ -61,11 +62,9 @@ async function runSmExtraction(
   memoryPath: string,
   currentMemory: string,
 ): Promise<void> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  const baseURL = process.env.PI_BASE_URL
-  if (!apiKey) return
+  if (!process.env.ANTHROPIC_API_KEY) return
 
-  const client = new Anthropic({ apiKey, baseURL })
+  const client = createAnthropicClient()
 
   const systemPrompt =
     'You are a session notes assistant. Your only job is to update the provided notes file using the edit_file tool.'

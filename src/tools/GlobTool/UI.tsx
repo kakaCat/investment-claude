@@ -12,8 +12,9 @@ export function GlobToolUseUI({ input }: { input: { pattern: string; cwd?: strin
 }
 
 export function GlobToolResultUI({ result }: { result: string }) {
-  const lines = result.split('\n').length
-  const preview = result.length > 300 ? result.slice(0, 300) + '\n…' : result
+  const safe = result ?? ''
+  const lines = safe.split('\n').length
+  const preview = safe.length > 300 ? safe.slice(0, 300) + '\n…' : safe
   return (
     <Box flexDirection="column">
       <Text color="gray" dimColor>{lines} match(es)</Text>

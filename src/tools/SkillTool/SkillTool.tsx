@@ -28,20 +28,27 @@ export const SkillTool = buildTool({
   async call(input, context) {
     const { skill, args } = input as { skill: string; args?: string }
     const name = skill.trim()
-    if (!name) return 'ERROR: Skill name cannot be empty.'
+    if (!name) return { data: 'ERROR: Skill name cannot be empty.' }
 
     const found = await findSkill(name, context.cwd)
     if (!found) {
-      return `ERROR: Unknown skill '${name}'. Use discover_skills to list available skills.`
+      return { data: `ERROR: Unknown skill '${name}'. Use discover_skills to list available skills.` }
     }
 
     let content: string
     try {
       content = await loadSkillContent(found)
     } catch {
-      return `ERROR: Failed to read skill file for '${name}'.`
+      return { data: `ERROR: Failed to read skill file for '${name}'.` }
     }
     content = content.replace(/\$ARGUMENTS/g, args ?? '')
-    return content
+    return { data: content }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

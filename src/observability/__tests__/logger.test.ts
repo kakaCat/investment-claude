@@ -19,8 +19,8 @@ afterEach(async () => {
 describe('initLogger', () => {
   it('sets log and html file paths', () => {
     initLogger('sess-1', tmpDir)
-    expect(getLogFilePath()).toBe(join(tmpDir, '.pi', 'logs', 'session-sess-1.jsonl'))
-    expect(getHtmlFilePath()).toBe(join(tmpDir, '.pi', 'logs', 'session-sess-1.html'))
+    expect(getLogFilePath()).toBe(join(tmpDir, '.pi', 'logs', 'session-ob-sess-1.jsonl'))
+    expect(getHtmlFilePath()).toBe(join(tmpDir, '.pi', 'logs', 'session-ob-sess-1.html'))
   })
 })
 

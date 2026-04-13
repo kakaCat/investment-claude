@@ -28,10 +28,25 @@ export const FileWriteTool = buildTool({
     try {
       await mkdir(dirname(absPath), { recursive: true })
       await writeFile(absPath, content, 'utf-8')
-      return `Written ${content.length} chars to ${absPath}`
+      return {
+
+        data: `Written ${content.length} chars to ${absPath}`
+
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      return `Error writing file: ${msg}`
+      return {
+
+        data: `Error writing file: ${msg}`
+
+      }
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
     }
   },
 })

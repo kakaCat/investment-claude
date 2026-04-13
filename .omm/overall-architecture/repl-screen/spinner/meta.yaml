@@ -1,0 +1,9 @@
+created: 2026-04-06T11:32:20.822Z
+updated: 2026-04-06T11:32:20.823Z
+update_count: 1
+last_field: description
+kind: nested-class
+title: spinner
+children: []
+parentPath:
+  - repl-screen

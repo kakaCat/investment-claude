@@ -13,17 +13,21 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
+    "@larksuite/oapi-sdk-nodejs": "npm:@larksuiteoapi/node-sdk@^1.60.0",
     "fast-glob": "^3.3.3",
     "fuse.js": "^7.2.0",
     "ink": "^5.0.1",
+    "playwright": "^1.59.1",
     "proper-lockfile": "^4.1.2",
     "react": "^18.3.0",
+    "sharp": "^0.34.5",
     "turndown": "^7.2.4"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/proper-lockfile": "^4.1.4",
     "@types/react": "^18.3.0",
+    "@types/sharp": "^0.31.1",
     "@types/turndown": "^5.0.6",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",

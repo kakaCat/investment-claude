@@ -1,0 +1,1 @@
+Gateway channel plugins (src/gateway/channels/). Each channel implements the ChannelPlugin interface (inbound event handling + outbound message sending). Currently only Feishu is implemented. New channels register via channelRegistry. Leaf.

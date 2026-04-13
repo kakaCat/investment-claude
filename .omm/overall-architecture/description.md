@@ -1,0 +1,1 @@
+Pi is a TypeScript/React/Ink re-implementation of Claude Code — a terminal AI coding assistant. It exposes two entry points: an interactive CLI (REPL) and a Feishu gateway for chat-based access. Both drive the same core query engine that streams Anthropic API calls, executes tools, and fires lifecycle hooks.

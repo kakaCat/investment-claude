@@ -28,6 +28,8 @@ vi.mock('./tasks/taskFileStore.js', () => ({
 
 vi.mock('./compact/autoCompact.js', () => ({
   autoCompactIfNeeded: mocks.autoCompactIfNeededMock,
+  createAutoCompactTracking: () => ({ consecutiveFailures: 0 }),
+  getAutoCompactThreshold: () => 167_000,
 }))
 
 vi.mock('./state/AppState.js', () => ({
@@ -42,6 +44,14 @@ vi.mock('./state/todoReminder.js', () => ({
 import { query } from './query.js'
 import type { Message, StreamEvent } from './types/message.js'
 import type { Tool } from './Tool.js'
+
+function createToolUseStream(toolId: string, toolName: string): AsyncIterable<unknown> {
+  return createStream([
+    { type: 'content_block_start', content_block: { type: 'tool_use', id: toolId, name: toolName } },
+    { type: 'message_delta', delta: { stop_reason: 'tool_use' } },
+    { type: 'message_stop' },
+  ])
+}
 
 function createStream(chunks: unknown[]): AsyncIterable<unknown> {
   return {
@@ -61,7 +71,7 @@ async function collectEvents(generator: AsyncGenerator<StreamEvent>): Promise<St
   return events
 }
 
-function createTool(call: Tool['call'] = vi.fn(async () => 'ok')): Tool {
+function createTool(call: Tool['call'] = vi.fn(async () => ({ data: 'ok' }))): Tool {
   return {
     name: 'TestTool',
     description: 'test tool',
@@ -69,6 +79,11 @@ function createTool(call: Tool['call'] = vi.fn(async () => 'ok')): Tool {
     isEnabled: () => true,
     isReadOnly: () => false,
     call,
+    mapToolResultToToolResultBlockParam: (output, toolUseId) => ({
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: output as string,
+    }),
     renderToolUse: () => null,
     renderToolResult: () => null,
   }
@@ -85,7 +100,7 @@ describe('query hook integration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.initTaskStoreMock.mockResolvedValue(undefined)
-    mocks.autoCompactIfNeededMock.mockResolvedValue({ wasCompacted: false })
+    mocks.autoCompactIfNeededMock.mockResolvedValue({ wasCompacted: false, tracking: { consecutiveFailures: 0 } })
     mocks.executeHooksMock.mockResolvedValue({})
     mocks.getAppStateMock.mockReturnValue({
       todos: [],
@@ -97,15 +112,7 @@ describe('query hook integration', () => {
 
   it('fires PreToolUse and PermissionDenied hooks before canUseTool on hook denial', async () => {
     mocks.streamMock
-      .mockReturnValueOnce(
-        createStream([
-          {
-            type: 'content_block_start',
-            content_block: { type: 'tool_use', id: 'tool-1', name: 'TestTool' },
-          },
-          { type: 'message_stop' },
-        ]),
-      )
+      .mockReturnValueOnce(createToolUseStream('tool-1', 'TestTool'))
       .mockReturnValueOnce(createStream([]))
 
     mocks.executeHooksMock.mockImplementation(async (input: { hook_event_name: string }) => {
@@ -164,17 +171,9 @@ describe('query hook integration', () => {
   })
 
   it('fires PostToolUse after a successful tool call', async () => {
-    const toolCall = vi.fn(async () => 'tool ok')
+    const toolCall = vi.fn(async () => ({ data: 'tool ok' }))
     mocks.streamMock
-      .mockReturnValueOnce(
-        createStream([
-          {
-            type: 'content_block_start',
-            content_block: { type: 'tool_use', id: 'tool-1', name: 'TestTool' },
-          },
-          { type: 'message_stop' },
-        ]),
-      )
+      .mockReturnValueOnce(createToolUseStream('tool-1', 'TestTool'))
       .mockReturnValueOnce(createStream([]))
 
     const canUseTool = vi.fn(async () => 'allow' as const)
@@ -207,15 +206,7 @@ describe('query hook integration', () => {
 
   it('fires PostToolUseFailure when a tool throws', async () => {
     mocks.streamMock
-      .mockReturnValueOnce(
-        createStream([
-          {
-            type: 'content_block_start',
-            content_block: { type: 'tool_use', id: 'tool-1', name: 'TestTool' },
-          },
-          { type: 'message_stop' },
-        ]),
-      )
+      .mockReturnValueOnce(createToolUseStream('tool-1', 'TestTool'))
       .mockReturnValueOnce(createStream([]))
 
     await collectEvents(
@@ -270,4 +261,5 @@ describe('query hook integration', () => {
       }),
     )
   })
+
 })

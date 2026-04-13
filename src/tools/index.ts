@@ -15,6 +15,7 @@ import { EnterPlanModeTool } from './EnterPlanModeTool/EnterPlanModeTool.js'
 import { ExitPlanModeTool } from './ExitPlanModeTool/ExitPlanModeTool.js'
 import { VerifyPlanExecutionTool } from './VerifyPlanExecutionTool/VerifyPlanExecutionTool.js'
 import { ToolSearchTool } from './ToolSearchTool/ToolSearchTool.js'
+import { MemorySearchTool } from './MemorySearchTool/MemorySearchTool.js'
 import { TodoWriteTool } from './TodoWriteTool/TodoWriteTool.js'
 import { TaskCreateTool } from './TaskCreateTool/TaskCreateTool.js'
 import { TaskGetTool } from './TaskGetTool/TaskGetTool.js'
@@ -30,9 +31,12 @@ import { DiscoverSkillsTool } from './DiscoverSkillsTool/DiscoverSkillsTool.js'
 import { AgentTool } from './AgentTool/AgentTool.js'
 import { ExitTool } from './ExitTool/ExitTool.js'
 import { WebFetchTool } from './WebFetchTool/WebFetchTool.js'
+import { SnipTool } from './SnipTool/SnipTool.js'
+import { BrowserTool } from './BrowserTool/BrowserTool.js'
 
 // 内置工具静态列表 — 新增工具在此 import + 加入数组
 const BUILTIN_TOOLS: Tool[] = [
+  SnipTool,
   AgentTool,
   ExitTool,
   BashTool,
@@ -42,12 +46,14 @@ const BUILTIN_TOOLS: Tool[] = [
   GlobTool,
   GrepTool,
   WebFetchTool,
+  BrowserTool,
   AskUserQuestionTool,
   SendUserFileTool,
   EnterPlanModeTool,
   ExitPlanModeTool,
   VerifyPlanExecutionTool,
   ToolSearchTool,
+  MemorySearchTool,
   TodoWriteTool,
   TaskCreateTool,
   TaskGetTool,

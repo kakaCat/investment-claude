@@ -19,14 +19,23 @@ export const CronListTool = buildTool({
   renderToolResult: (result) => <CronListToolResultUI result={result} />,
   async call() {
     const tasks = listCronTasks()
-    if (tasks.length === 0) return 'No scheduled jobs.'
-    return tasks
-      .map(t => {
-        const human = cronToHuman(t.cron)
-        const type = t.recurring ? '(recurring)' : '(one-shot)'
-        const prompt = t.prompt.length > 80 ? t.prompt.slice(0, 80) + '…' : t.prompt
-        return `${t.id} — ${human} ${type}: ${prompt}`
-      })
-      .join('\n')
+    if (tasks.length === 0) return { data: 'No scheduled jobs.' }
+    return {
+      data: tasks
+        .map(t => {
+          const human = cronToHuman(t.cron)
+          const type = t.recurring ? '(recurring)' : '(one-shot)'
+          const prompt = t.prompt.length > 80 ? t.prompt.slice(0, 80) + '…' : t.prompt
+          return `${t.id} — ${human} ${type}: ${prompt}`
+        })
+        .join('\n'),
+    }
+  },
+  mapToolResultToToolResultBlockParam(output, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: output,
+    }
   },
 })

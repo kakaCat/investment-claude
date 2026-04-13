@@ -11,6 +11,7 @@ export const ReadTool = buildTool({
   name: 'read_file',
   description: DESCRIPTION,
   searchHint: SEARCH_HINT,
+  maxResultSizeChars: Infinity, // 自己管理截断（MAX_CHARS = 20_000）
   inputSchema: {
     type: 'object',
     properties: {
@@ -31,11 +32,24 @@ export const ReadTool = buildTool({
       content = await readFile(absPath, 'utf-8')
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      return `Error reading file: ${msg}`
+      return {
+        data: `Error reading file: ${msg}`,
+      }
     }
     if (content.length > MAX_CHARS) {
-      return content.slice(0, MAX_CHARS) + `\n\n[...truncated, file is ${content.length} chars total]`
+      return {
+        data: content.slice(0, MAX_CHARS) + `\n\n[...truncated, file is ${content.length} chars total]`,
+      }
     }
-    return content
+    return {
+      data: content,
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

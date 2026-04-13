@@ -4,6 +4,33 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 import type { AppState } from './state/AppState.js'
+import type { ToolResultContent, ImageBlock } from './types/message.js'
+
+// ── 工具返回类型 ────────────────────────────────────────────────────────────
+
+/**
+ * 工具执行结果包装器（对标 Claude Code ToolResult<T>）
+ *
+ * call() 返回此类型，data 字段存储结构化数据供 UI 和后续处理使用。
+ * mapToolResultToToolResultBlockParam() 负责将 data 序列化为 API 格式。
+ */
+export type ToolResult<T = unknown> = {
+  /** 结构化数据（给 UI 和 mapToolResultToToolResultBlockParam 使用） */
+  data: T
+}
+
+/**
+ * API tool_result block 参数（对标 Anthropic SDK ToolResultBlockParam）
+ *
+ * 这是发送给 Claude API 的格式，content 可以是：
+ * - string: 纯文本结果
+ * - Array: 包含 text/image block 的数组（用于截图等场景）
+ */
+export type ToolResultBlockParam = {
+  type: 'tool_result'
+  tool_use_id: string
+  content: string | Array<{ type: 'text'; text: string } | ImageBlock>
+}
 
 /** 工具执行上下文（对标 Claude Code ToolUseContext） */
 export type ToolUseContext = {
@@ -67,8 +94,14 @@ export type ToolUseContext = {
   //   添加时机：实现文件读取缓存 / post-compact 恢复时。
 }
 
-/** 工具接口 */
-export interface Tool {
+/**
+ * 工具接口（对标 Claude Code Tool<Input, Output, P>）
+ *
+ * 泛型参数：
+ * - Input: 工具输入类型（从 inputSchema 推导）
+ * - Output: call() 返回的 data 类型
+ */
+export interface Tool<Input = unknown, Output = unknown> {
   name: string
   description: string
   inputSchema: {
@@ -84,17 +117,65 @@ export interface Tool {
   isEnabled(): boolean
   /** 是否只读（不修改文件/系统状态） */
   isReadOnly(): boolean
-  /** 执行工具，返回结果字符串 */
-  call(input: unknown, context: ToolUseContext): Promise<string>
+
+  /**
+   * 执行工具，返回结构化数据。
+   *
+   * 职责：
+   * - 执行工具逻辑
+   * - 返回结构化数据（给 UI 和 mapToolResultToToolResultBlockParam 使用）
+   * - 不负责序列化为 API 格式（由 mapToolResultToToolResultBlockParam 负责）
+   */
+  call(input: Input, context: ToolUseContext): Promise<ToolResult<Output>>
+
+  /**
+   * 可选：直接返回 content blocks（用于需要返回 image 等复杂内容的工具）
+   *
+   * 如果实现了此方法，query.ts 会优先调用它而不是 call()。
+   * 返回值直接作为 tool_result 的 content，跳过 mapToolResultToToolResultBlockParam。
+   */
+  callWithBlocks?(
+    input: Input,
+    context: ToolUseContext,
+  ): Promise<ToolResultContent['content']>
+
+  /**
+   * 将工具输出转换为 API tool_result block 格式。
+   *
+   * 职责：
+   * - 将 call() 返回的结构化数据序列化为字符串或 content block 数组
+   * - 可以添加额外的提示词、警告或指导信息给模型
+   * - 支持返回 image block（用于截图等场景）
+   *
+   * 对标 Claude Code 的 mapToolResultToToolResultBlockParam 方法。
+   */
+  mapToolResultToToolResultBlockParam(
+    output: Output,
+    toolUseId: string,
+  ): ToolResultBlockParam
+
+  /**
+   * Layer 1 budget: result 超过此字符数时写磁盘并返回预览。
+   * Infinity = opt-out（工具自己管理截断）。默认 50_000。
+   */
+  maxResultSizeChars?: number
+
   /** 工具调用时展示的 Ink UI */
   renderToolUse(input: unknown): React.ReactNode
   /** 工具结果展示的 Ink UI */
   renderToolResult(result: string): React.ReactNode
 }
 
-/** buildTool 的输入定义（call 必填，其余有默认值） */
-export type ToolDef = Pick<Tool, 'name' | 'description' | 'inputSchema' | 'call'> &
-  Partial<Omit<Tool, 'name' | 'description' | 'inputSchema' | 'call'>>
+/**
+ * buildTool 的输入定义（call 和 mapToolResultToToolResultBlockParam 必填，其余有默认值）
+ *
+ * 对标 Claude Code ToolDef<Input, Output, P>
+ */
+export type ToolDef<Input = unknown, Output = unknown> = Pick<
+  Tool<Input, Output>,
+  'name' | 'description' | 'inputSchema' | 'call' | 'mapToolResultToToolResultBlockParam'
+> &
+  Partial<Omit<Tool<Input, Output>, 'name' | 'description' | 'inputSchema' | 'call' | 'mapToolResultToToolResultBlockParam'>>
 
 function defaultRenderToolUse(_name: string, input: unknown): React.ReactNode {
   return <Text color="gray">{JSON.stringify(input)}</Text>
@@ -109,12 +190,19 @@ function defaultRenderToolResult(result: string): React.ReactNode {
   )
 }
 
-/** 工具工厂：填充所有默认值 */
-export function buildTool(def: ToolDef): Tool {
+/**
+ * 工具工厂：填充所有默认值
+ *
+ * 对标 Claude Code buildTool<D extends AnyToolDef>(def: D): BuiltTool<D>
+ */
+export function buildTool<Input = unknown, Output = unknown>(
+  def: ToolDef<Input, Output>,
+): Tool<Input, Output> {
   return {
     isEnabled: () => true,
     isReadOnly: () => false,
     deferLoading: false,
+    maxResultSizeChars: 50_000,
     renderToolUse: (input) => defaultRenderToolUse(def.name, input),
     renderToolResult: (result) => defaultRenderToolResult(result),
     ...def,

@@ -51,17 +51,26 @@ export const AgentTool = buildTool({
 
     if (!agentDef) {
       const available = agents.map(a => a.agentType).join(', ')
-      return `ERROR: Unknown agent type '${type}'. Available: ${available}`
+      return { data: `ERROR: Unknown agent type '${type}'. Available: ${available}` }
     }
 
     // TODO(background): if run_in_background === true, wrap in async task
     // TODO(fork): if !subagent_type && forkGateEnabled, use buildForkedMessages
     // TODO(worktree): if isolation === 'worktree', createAgentWorktree first
 
-    return runSubAgent(agentDef, prompt, {
-      allTools: context.tools,
-      abortSignal: context.abortSignal,
-      cwd: context.cwd,
-    })
+    return {
+      data: await runSubAgent(agentDef, prompt, {
+        allTools: context.tools,
+        abortSignal: context.abortSignal,
+        cwd: context.cwd,
+      }),
+    }
+  },
+  mapToolResultToToolResultBlockParam(output, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: output,
+    }
   },
 })

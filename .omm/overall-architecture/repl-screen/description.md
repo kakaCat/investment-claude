@@ -1,0 +1,1 @@
+Main interactive screen (src/screens/REPL.tsx). Drives the query loop, manages React state for messages, loading, permission requests, plan approval, and verify flows. Renders Messages, PromptInput, Spinner, and modal overlays via Ink.

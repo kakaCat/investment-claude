@@ -1,0 +1,66 @@
+<h2>架构设计</h2>
+<p class="subtitle">第一节：数据流 + 模块结构</p>
+
+<div class="section">
+  <h3>数据流</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-family:monospace;font-size:13px;line-height:1.8">
+      <div style="color:#a78bfa">Pi 运行时</div>
+      <div style="margin-left:16px">
+        FunctionHook: SessionStart → <span style="color:#34d399">logger.write(session_start)</span><br>
+        FunctionHook: UserPromptSubmit → <span style="color:#34d399">logger.write(user_prompt)</span><br>
+        FunctionHook: PreToolUse → <span style="color:#34d399">logger.write(tool_call + ts)</span><br>
+        FunctionHook: PostToolUse → <span style="color:#34d399">logger.write(tool_result + duration_ms)</span><br>
+        FunctionHook: PostToolUseFailure → <span style="color:#34d399">logger.write(tool_error)</span><br>
+        FunctionHook: Stop → <span style="color:#34d399">logger.write(session_end + messages[])</span>
+      </div>
+      <div style="margin-top:8px;color:#a78bfa">写入</div>
+      <div style="margin-left:16px;color:#fbbf24">
+        .pi/logs/session-&lt;id&gt;.jsonl &nbsp;← 每行一个事件，追加写
+      </div>
+      <div style="margin-top:8px;color:#a78bfa">Stop 时生成报告</div>
+      <div style="margin-left:16px">
+        htmlReport.generate(jsonl) → <span style="color:#fbbf24">.pi/logs/session-&lt;id&gt;.html</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>新增文件</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-family:monospace;font-size:13px;line-height:1.9">
+      <span style="color:#a78bfa">src/observability/</span><br>
+      <span style="margin-left:16px;color:#34d399">logger.ts</span>
+      <span style="color:#6b7280"> — 写 JSONL，管理当前 session 文件路径</span><br>
+      <span style="margin-left:16px;color:#34d399">htmlReport.ts</span>
+      <span style="color:#6b7280"> — 读 JSONL → 生成自包含 HTML</span><br>
+      <span style="margin-left:16px;color:#34d399">tokenCount.ts</span>
+      <span style="color:#6b7280"> — 复用 roughTokenCount，统计每轮 token 数</span><br>
+      <span style="margin-left:16px;color:#34d399">index.ts</span>
+      <span style="color:#6b7280"> — 导出 initObservability()，注册所有 hooks</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>JSONL 事件格式（每行一个 JSON）</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-family:monospace;font-size:12px;line-height:1.7;color:#e2e8f0">
+      {"event":"session_start","session_id":"abc123","cwd":"/proj","ts":1000}<br>
+      {"event":"user_prompt","prompt":"帮我写排序函数","ts":1001}<br>
+      {"event":"tool_call","tool":"Read","input":{"file_path":"src/utils.ts"},"ts":1005}<br>
+      {"event":"tool_result","tool":"Read","result":"export...","duration_ms":45,"ts":1006}<br>
+      {"event":"tool_call","tool":"Write","input":{...},"ts":1008}<br>
+      {"event":"tool_result","tool":"Write","result":"ok","duration_ms":12,"ts":1009}<br>
+      {"event":"session_end","stop_reason":"done","messages":[...],"ts":1020}
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>集成方式</h3>
+  <p>在 <code>src/screens/REPL.tsx</code> 的初始化 useEffect 里，和 <code>initSessionMemory()</code> 并列调用 <code>initObservability()</code>。一次注册，永久生效。</p>
+</div>
+
+<p style="margin-top:24px;color:#94a3b8">这个架构设计看起来合理吗？确认后我展示 HTML 报告的界面设计。</p>

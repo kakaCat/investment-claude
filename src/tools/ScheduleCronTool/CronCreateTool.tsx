@@ -26,20 +26,27 @@ export const CronCreateTool = buildTool({
     const { cron, prompt, recurring = true } = input as { cron: string; prompt: string; recurring?: boolean }
     const fields = parseCronExpression(cron)
     if (!fields) {
-      return `ERROR: Invalid cron expression '${cron}'. Expected 5 fields: M H DoM Mon DoW.`
+      return { data: `ERROR: Invalid cron expression '${cron}'. Expected 5 fields: M H DoM Mon DoW.` }
     }
     const nextRun = computeNextCronRun(fields, new Date())
     if (!nextRun) {
-      return `ERROR: Cron expression '${cron}' does not match any date in the next year.`
+      return { data: `ERROR: Cron expression '${cron}' does not match any date in the next year.` }
     }
     if (listCronTasks().length >= MAX_JOBS) {
-      return `ERROR: Too many scheduled jobs (max ${MAX_JOBS}). Cancel one first.`
+      return { data: `ERROR: Too many scheduled jobs (max ${MAX_JOBS}). Cancel one first.` }
     }
     const id = addCronTask(cron, prompt, recurring)
     const humanSchedule = cronToHuman(cron)
     const recurringNote = recurring
       ? `Recurring (auto-expires after 7 days). Use cron_delete to cancel sooner.`
       : `One-shot (fires once then auto-deletes).`
-    return `Scheduled job ${id} (${humanSchedule}). Session-only. ${recurringNote}`
+    return { data: `Scheduled job ${id} (${humanSchedule}). Session-only. ${recurringNote}` }
+  },
+  mapToolResultToToolResultBlockParam(output, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: output,
+    }
   },
 })

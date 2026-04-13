@@ -6,7 +6,7 @@ let logFilePath: string | null = null
 
 export function initLogger(sessionId: string, cwd: string): void {
   const logsDir = join(cwd, '.pi', 'logs')
-  logFilePath = join(logsDir, `session-${sessionId}.jsonl`)
+  logFilePath = join(logsDir, `session-ob-${sessionId}.jsonl`)
   try {
     mkdirSync(logsDir, { recursive: true })
   } catch {

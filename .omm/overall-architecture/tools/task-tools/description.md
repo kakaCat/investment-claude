@@ -1,0 +1,1 @@
+Task management tools (src/tools/TaskCreateTool/, TaskGetTool/, TaskListTool/, TaskUpdateTool/, TaskStopTool/, TaskOutputTool/). Manage background agent tasks stored in ~/.pi/tasks/ via taskFileStore. Leaf group.

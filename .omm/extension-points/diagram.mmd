@@ -1,0 +1,17 @@
+graph TD
+    classDef entry fill:#89b4fa,stroke:#89b4fa,color:#1e1e2e
+    classDef store fill:#a6e3a1,stroke:#a6e3a1,color:#1e1e2e
+
+    hook-system["Hook System\nsrc/hooks/"]:::entry
+    plugin-tools["Plugin Tools\nsrc/plugins/"]
+    custom-agents["Custom Agents\n~/.claude/agents/"]:::store
+    skills-dir["Skills Directory\n~/.claude/plugins/"]:::store
+    settings-hooks["Shell Hooks\n~/.pi/settings.json"]:::store
+    gateway-channels["Gateway Channels\nsrc/gateway/channels/"]
+    channel-registry["Channel Registry\nsrc/gateway/channel/registry.ts"]
+
+    settings-hooks -->|"loaded into"| hook-system
+    plugin-tools -->|"extends"| hook-system
+    custom-agents -->|"loaded by agent loader"| hook-system
+    skills-dir -->|"discovered by SkillTool"| hook-system
+    gateway-channels -->|"registered in"| channel-registry

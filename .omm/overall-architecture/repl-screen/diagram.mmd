@@ -1,0 +1,15 @@
+graph LR
+    classDef entry fill:#89b4fa,stroke:#89b4fa,color:#1e1e2e
+
+    prompt-input["PromptInput\nsrc/components/PromptInput.tsx"]:::entry
+    messages["Messages\nsrc/components/Messages.tsx"]
+    spinner["Spinner\nsrc/components/Spinner.tsx"]
+    permission-modal["Permission Modal\ninline in REPL.tsx"]
+    plan-modal["Plan Approval Modal\ninline in REPL.tsx"]
+    verify-modal["Verify Modal\ninline in REPL.tsx"]
+
+    prompt-input -->|"onSubmit triggers"| permission-modal
+    permission-modal -->|"resolved → continues"| messages
+    plan-modal -->|"approved/rejected"| messages
+    verify-modal -->|"verified/rejected"| messages
+    spinner -->|"shown while"| messages

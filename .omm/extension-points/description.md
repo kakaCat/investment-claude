@@ -1,0 +1,1 @@
+Pi's extension architecture. Four main extension points: shell hooks (configured in settings.json), plugin tools (loaded from src/plugins/), custom agents (markdown files in ~/.claude/agents/), and skills (markdown files in ~/.claude/plugins/). Gateway channels are also pluggable via a channel registry.

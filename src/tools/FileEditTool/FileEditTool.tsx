@@ -38,15 +38,27 @@ export const FileEditTool = buildTool({
       content = await readFile(absPath, 'utf-8')
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      return `Error reading file: ${msg}`
+      return {
+
+        data: `Error reading file: ${msg}`
+
+      }
     }
 
     const count = content.split(old_string).length - 1
     if (count === 0) {
-      return `Error: old_string not found in ${path}`
+      return {
+
+        data: `Error: old_string not found in ${path}`
+
+      }
     }
     if (count > 1) {
-      return `Error: old_string appears ${count} times in ${path} — must be unique`
+      return {
+
+        data: `Error: old_string appears ${count} times in ${path} — must be unique`
+
+      }
     }
 
     const updated = content.replace(old_string, new_string)
@@ -54,9 +66,26 @@ export const FileEditTool = buildTool({
       await writeFile(absPath, updated, 'utf-8')
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      return `Error writing file: ${msg}`
+      return {
+
+        data: `Error writing file: ${msg}`
+
+      }
     }
 
-    return `Edited ${path}: replaced ${old_string.length} chars with ${new_string.length} chars`
+    return {
+
+
+      data: `Edited ${path}: replaced ${old_string.length} chars with ${new_string.length} chars`
+
+
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

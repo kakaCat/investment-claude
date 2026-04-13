@@ -4,7 +4,7 @@ import {
   shouldAutoCompact,
   getAutoCompactThreshold,
   autoCompactIfNeeded,
-  resetAutoCompactState,
+  createAutoCompactTracking,
 } from '../autoCompact.js'
 import type { Message } from '../../types/message.js'
 
@@ -26,7 +26,6 @@ const makeLargeMessages = (targetTokens: number): Message[] => {
 }
 
 beforeEach(() => {
-  resetAutoCompactState()
   delete process.env.CLAUDE_AUTOCOMPACT_THRESHOLD
   delete process.env.DISABLE_AUTO_COMPACT
 })
@@ -60,15 +59,25 @@ describe('shouldAutoCompact', () => {
 describe('autoCompactIfNeeded', () => {
   it('returns wasCompacted=false when below threshold', async () => {
     const msgs: Message[] = [{ type: 'user', content: [{ type: 'text', text: 'hi' }] }]
-    const result = await autoCompactIfNeeded(msgs)
+    const tracking = createAutoCompactTracking()
+    const result = await autoCompactIfNeeded(msgs, tracking)
     expect(result.wasCompacted).toBe(false)
   })
 
   it('returns wasCompacted=true when threshold exceeded', async () => {
     process.env.CLAUDE_AUTOCOMPACT_THRESHOLD = '10'
     const msgs = makeLargeMessages(50)
-    const result = await autoCompactIfNeeded(msgs)
+    const tracking = createAutoCompactTracking()
+    const result = await autoCompactIfNeeded(msgs, tracking)
     expect(result.wasCompacted).toBe(true)
     expect(result.result).toBeDefined()
+  })
+
+  it('circuit breaker stops after 3 consecutive failures', async () => {
+    process.env.CLAUDE_AUTOCOMPACT_THRESHOLD = '10'
+    const msgs = makeLargeMessages(50)
+    let tracking = { consecutiveFailures: 3 }
+    const result = await autoCompactIfNeeded(msgs, tracking)
+    expect(result.wasCompacted).toBe(false)
   })
 })

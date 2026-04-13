@@ -1,0 +1,9 @@
+created: 2026-04-06T11:36:18.745Z
+updated: 2026-04-06T11:36:18.745Z
+update_count: 1
+last_field: description
+kind: nested-class
+title: memory-scan
+children: []
+parentPath:
+  - memdir

@@ -20,7 +20,14 @@ export const TaskGetTool = buildTool({
   async call(input, context) {
     const { id } = input as { id: number }
     const task = context.getAppState().tasks.get(id)
-    if (!task) return `ERROR: Task ${id} not found.`
-    return JSON.stringify(task)
+    if (!task) return { data: `ERROR: Task ${id} not found.` }
+    return { data: JSON.stringify(task) }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

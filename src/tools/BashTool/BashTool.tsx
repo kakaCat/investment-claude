@@ -58,6 +58,13 @@ export const BashTool = buildTool({
   renderToolResult: (result) => <BashToolResultUI result={result} />,
   async call(input, context) {
     const { command } = input as { command: string }
-    return runBash(command, context.abortSignal)
+    return { data: await runBash(command, context.abortSignal) }
+  },
+  mapToolResultToToolResultBlockParam(output, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: output,
+    }
   },
 })

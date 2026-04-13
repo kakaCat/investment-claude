@@ -1,0 +1,1 @@
+Gateway query runner (src/gateway/queryRunner.ts). Adapts the query engine for gateway use — no Ink UI, streams text chunks via onChunk callback, handles askUser/planMode/verify via Feishu interactive cards. Leaf.

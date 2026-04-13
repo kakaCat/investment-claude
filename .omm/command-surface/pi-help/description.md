@@ -1,0 +1,1 @@
+--help / -h flag. Prints usage text showing available commands and exits. No API key required. Leaf.

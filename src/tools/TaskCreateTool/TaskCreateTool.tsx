@@ -47,9 +47,24 @@ export const TaskCreateTool = buildTool({
         },
         context,
       )
-      return JSON.stringify(task)
+      return {
+
+        data: JSON.stringify(task)
+
+      }
     } catch (err) {
-      return `ERROR: ${err instanceof Error ? err.message : String(err)}`
+      return {
+
+        data: `ERROR: ${err instanceof Error ? err.message : String(err)}`
+
+      }
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
     }
   },
 })

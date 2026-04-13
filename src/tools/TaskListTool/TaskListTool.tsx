@@ -23,6 +23,17 @@ export const TaskListTool = buildTool({
     let tasks = Array.from(context.getAppState().tasks.values())
     if (status) tasks = tasks.filter((t) => t.status === status)
     if (owner) tasks = tasks.filter((t) => t.owner === owner)
-    return JSON.stringify(tasks)
+    return {
+
+      data: JSON.stringify(tasks)
+
+    }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

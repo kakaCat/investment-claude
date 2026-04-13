@@ -1,0 +1,9 @@
+graph LR
+    compact-core["Compact Core\nsrc/compact/index.ts"]
+    auto-compact["Auto Compact\nsrc/compact/autoCompact.ts"]
+    compact-prompt["Compact Prompts\nsrc/compact/prompt.ts"]
+    session-memory-compact["Session Memory Compact\nsrc/compact/sessionMemory.ts"]
+
+    auto-compact -->|"calls when threshold exceeded"| compact-core
+    compact-core -->|"uses prompts from"| compact-prompt
+    compact-core -->|"reads session memory via"| session-memory-compact

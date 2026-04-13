@@ -45,6 +45,13 @@ export const BUILTIN_COMMANDS: CommandItem[] = [
     source: 'builtin',
   },
   {
+    id: 'builtin:report',
+    command: '/report',
+    label: 'report',
+    description: 'Generate HTML report for current session log',
+    source: 'builtin',
+  },
+  {
     id: 'builtin:exit',
     command: '/exit',
     label: 'exit',

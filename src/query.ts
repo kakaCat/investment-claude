@@ -3,14 +3,35 @@
 // 职责：调 API → 流式接收 → 权限检查 → 执行工具 → yield StreamEvent
 
 import Anthropic from '@anthropic-ai/sdk'
+import { randomUUID } from 'crypto'
+import { createAnthropicClient } from './anthropic.js'
 import type { Tool, ToolUseContext } from './Tool.js'
-import type { Message, StreamEvent, UserMessage, AssistantMessage } from './types/message.js'
+import type { Message, StreamEvent, UserMessage, AssistantMessage, ToolResultContent, ToolUseContent } from './types/message.js'
+import { getThinkingParams } from './utils/thinking.js'
 import { getAppState, setAppState } from './state/AppState.js'
 import { buildTodoReminderIfNeeded } from './state/todoReminder.js'
 import { findTool } from './tools/index.js'
 import { initTaskStore } from './tasks/taskFileStore.js'
-import { autoCompactIfNeeded } from './compact/autoCompact.js'
+import {
+  autoCompactIfNeeded,
+  createAutoCompactTracking,
+  getAutoCompactThreshold,
+  type AutoCompactTracking,
+} from './compact/autoCompact.js'
+import { runPostCompactCleanup } from './compact/postCompactCleanup.js'
+import { snipIfNeeded } from './compact/snip.js'
+import { microcompactIfNeeded } from './compact/microcompact.js'
 import { executeHooks } from './hooks/index.js'
+import {
+  createContentReplacementState,
+  enforceToolResultBudget,
+  processToolResult,
+  DEFAULT_MAX_RESULT_SIZE_CHARS,
+} from './utils/toolResultStorage.js'
+import { registerMessageId } from './utils/messageIds.js'
+import { isSnipped } from './utils/snipStore.js'
+import { isRetryable, getRetryDelay } from './utils/apiRetry.js'
+import { modelSupportsVision } from './utils/modelCapabilities.js'
 
 // ── 类型 ──────────────────────────────────────────────────────────────────────
 
@@ -54,212 +75,295 @@ function toSDKTool(tool: Tool): Anthropic.Tool {
   }
 }
 
-/** 将 Pi 的 Message[] 转换为 Anthropic SDK 格式 */
-function toSDKMessages(messages: Message[]): Anthropic.MessageParam[] {
+/**
+ * 在 user message content 的最后一个 text block 末尾追加 [id:xxx] 标签。
+ * 只修改 SDK 副本，不改原始 msg。
+ */
+function appendIdTag(
+  content: Anthropic.MessageParam['content'],
+  shortId: string,
+): Anthropic.MessageParam['content'] {
+  const tag = `\n[id:${shortId}]`
+  if (typeof content === 'string') {
+    return content + tag
+  }
+  if (!Array.isArray(content) || content.length === 0) {
+    return content
+  }
+  // Find last text block and append tag
+  const blocks = [...content] as Anthropic.ContentBlockParam[]
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const block = blocks[i]!
+    if (block.type === 'text') {
+      blocks[i] = { ...block, text: block.text + tag }
+      return blocks
+    }
+  }
+  // No text block found — append a new one
+  return [...blocks, { type: 'text', text: tag }]
+}
+
+/**
+ * 将 Pi 的 Message[] 转换为 Anthropic SDK 格式。
+ * 对非 meta 的 user message 注入 [id:xxx] 标签，让模型能通过 SnipTool 引用。
+ * 不支持 vision 的模型会过滤掉 tool_result 中的 image block。
+ */
+function toSDKMessages(messages: Message[], model: string): Anthropic.MessageParam[] {
+  const supportsVision = modelSupportsVision(model)
   return messages
     .filter((msg): msg is Exclude<Message, { type: 'compact_boundary' }> => msg.type !== 'compact_boundary')
-    .map((msg) => ({
-      role: msg.type as 'user' | 'assistant',
-      content: msg.content as Anthropic.MessageParam['content'],
-    }))
+    .map((msg) => {
+      if (msg.type === 'user') {
+        const content = msg.content.map(c => {
+          if (c.type !== 'tool_result' || !Array.isArray(c.content)) return c
+          const filtered = supportsVision
+            ? c.content
+            : c.content.filter(b => b.type === 'text')
+          return { ...c, content: filtered.length > 0 ? filtered : 'No text content available.' }
+        })
+        if (msg.uuid && !msg.isMeta) {
+          const shortId = registerMessageId(msg.uuid)
+          return {
+            role: 'user' as const,
+            content: appendIdTag(content as Anthropic.MessageParam['content'], shortId),
+          }
+        }
+        return { role: 'user' as const, content: content as Anthropic.MessageParam['content'] }
+      }
+      return {
+        role: msg.type as 'user' | 'assistant',
+        content: msg.content as Anthropic.MessageParam['content'],
+      }
+    })
+}
+
+/**
+ * 取最后一个 compact_boundary 之后的消息（对标 CC getMessagesAfterCompactBoundary）。
+ * 同时过滤掉被 SnipTool 标记删除的消息。
+ */
+function getMessagesAfterCompactBoundary(messages: Message[]): Message[] {
+  let startIdx = 0
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]!.type === 'compact_boundary') {
+      startIdx = i
+      break
+    }
+  }
+  const sliced = startIdx === 0 ? messages : messages.slice(startIdx)
+  // Filter out messages marked as snipped by SnipTool
+  return sliced.filter(msg => msg.type !== 'user' || !msg.uuid || !isSnipped(msg.uuid))
 }
 
 // ── 单轮流式调用（对标 Claude Code claude.ts 中的 API 流）─────────────────────
 
-/**
- * 对 API 发起一轮流式请求，累积 assistantContent 并 yield 文本 delta。
- * 不做工具执行 — 那是 executeTools 的事。
- */
-async function* streamOneTurn(
-  client: Anthropic,
-  params: {
-    model: string
-    systemPrompt: string
-    messages: Message[]
-    tools: Tool[]
-    abortSignal?: AbortSignal
-  },
-): AsyncGenerator<StreamEvent, AssistantMessage['content']> {
-  const assistantContent: AssistantMessage['content'] = []
+// ── 工具执行 ──────────────────────────────────────────────────────────────────
 
-  const stream = client.messages.stream(
-    {
-      model: params.model,
-      max_tokens: 8192,
-      system: params.systemPrompt,
-      messages: toSDKMessages(params.messages),
-      tools: params.tools.map(toSDKTool),
-    },
-    { signal: params.abortSignal },
-  )
+const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT = 3
 
-  for await (const chunk of stream) {
-    // 中止检查
-    if (params.abortSignal?.aborted) {
-      return assistantContent
-    }
+// ── 权限检查辅助函数 ────────────────────────────────────────────────────────
 
-    if (chunk.type === 'content_block_start') {
-      if (chunk.content_block.type === 'tool_use') {
-        // tool_use 的 input 会在后续 delta 中陆续到达，这里先占一个壳。
-        assistantContent.push({
-          type: 'tool_use',
-          id: chunk.content_block.id,
-          name: chunk.content_block.name,
-          input: {},
-        })
-      }
-    } else if (chunk.type === 'content_block_delta') {
-      if (chunk.delta.type === 'text_delta') {
-        const delta = chunk.delta.text
-        const last = assistantContent[assistantContent.length - 1]
-        if (last?.type === 'text') {
-          last.text += delta
-        } else {
-          assistantContent.push({ type: 'text', text: delta })
-        }
-        yield { type: 'text_delta', delta }
-      } else if (chunk.delta.type === 'input_json_delta') {
-        // 累积 tool input JSON（流式传输）
-        const last = assistantContent[assistantContent.length - 1]
-        if (last?.type === 'tool_use') {
-          const existing = (last as any)._inputJson ?? ''
-          ;(last as any)._inputJson = existing + chunk.delta.partial_json
-        }
-      }
-    } else if (chunk.type === 'message_stop') {
-      // 解析所有 tool_use 的完整 input
-      for (const c of assistantContent) {
-        if (c.type === 'tool_use') {
-          const raw = (c as any)._inputJson ?? '{}'
-          try {
-            // SDK 把工具参数按 JSON 碎片流出来，结束时再一次性还原成对象。
-            c.input = JSON.parse(raw)
-          } catch {
-            // 解析失败时回退为空对象，避免整个 query 循环因为坏 JSON 中断。
-            c.input = {}
-          }
-          delete (c as any)._inputJson
-        }
-      }
-    }
-  }
-
-  return assistantContent
+type AllowedTool = {
+  toolUse: ToolUseContent
+  tool: Tool | undefined
 }
 
-// ── 工具执行（对标 Claude Code runTools）─────────────────────────────────────
+type PermissionCheckResult = {
+  allowed: AllowedTool[]
+  denied: Array<{
+    toolUse: ToolUseContent
+    reason: string
+  }>
+}
 
-/**
- * 执行单轮的所有工具调用，yield tool_use / tool_result / tool_denied 事件。
- * 返回 toolResults 列表用于追加到历史。
- */
-async function* executeTools(
-  toolUses: AssistantMessage['content'],
+async function* checkToolPermissions(
+  toolUses: ToolUseContent[],
   tools: Tool[],
   canUseTool: CanUseTool,
   context: ToolUseContext,
   sessionId: string,
-): AsyncGenerator<StreamEvent, UserMessage['content']> {
-  const toolResults: UserMessage['content'] = []
+): AsyncGenerator<StreamEvent, PermissionCheckResult> {
+  const allowed: AllowedTool[] = []
+  const denied: Array<{ toolUse: ToolUseContent; reason: string }> = []
 
-  for (const c of toolUses) {
-    if (c.type !== 'tool_use') continue
-
-    // Fire PreToolUse hook — may override permission
+  for (const toolUse of toolUses) {
+    // Fire PreToolUse hook
     const preToolHookResult = await executeHooks(
       {
         hook_event_name: 'PreToolUse',
-        tool_name: c.name,
-        tool_input: c.input,
+        tool_name: toolUse.name,
+        tool_input: toolUse.input,
         session_id: sessionId,
         cwd: context.cwd,
       },
-      { matcherQuery: c.name, signal: context.abortSignal },
+      { matcherQuery: toolUse.name, signal: context.abortSignal },
     )
 
     let permission: 'allow' | 'deny'
     if (preToolHookResult.permissionDecision === 'deny') {
       permission = 'deny'
     } else if (preToolHookResult.preventContinuation) {
-      return toolResults
+      // Early exit - return what we have so far
+      return { allowed, denied }
     } else {
-      // 权限检查（对标 Claude Code canUseTool）
-      permission = await canUseTool(c.name, c.input)
+      permission = await canUseTool(toolUse.name, toolUse.input)
     }
 
     if (permission === 'deny') {
-      yield { type: 'tool_denied', tool_use_id: c.id, name: c.name }
+      yield { type: 'tool_denied', tool_use_id: toolUse.id, name: toolUse.name }
       await executeHooks(
         {
           hook_event_name: 'PermissionDenied',
-          tool_name: c.name,
-          tool_input: c.input,
+          tool_name: toolUse.name,
+          tool_input: toolUse.input,
           session_id: sessionId,
           cwd: context.cwd,
         },
-        { matcherQuery: c.name, signal: context.abortSignal },
+        { matcherQuery: toolUse.name, signal: context.abortSignal },
       )
-      toolResults.push({
-        type: 'tool_result',
-        tool_use_id: c.id,
-        // 仍然补一条 tool_result，保证模型下一轮能看到“工具未执行”的结果。
-        content: 'Tool use was denied by the user.',
-      })
+      denied.push({ toolUse, reason: 'Permission denied by user' })
+
       if (preToolHookResult.preventContinuation) {
-        return toolResults
+        return { allowed, denied }
       }
-      continue
-    }
-
-    // 先把 tool_use 事件抛给上层 UI，再真正执行工具，便于界面即时展示。
-    yield { type: 'tool_use', id: c.id, name: c.name, input: c.input }
-
-    const tool = findTool(c.name, tools)
-    let result: string
-    if (!tool) {
-      result = `Error: tool "${c.name}" not found`
     } else {
-      try {
-        result = await tool.call(c.input, context)
-        await executeHooks(
-          {
-            hook_event_name: 'PostToolUse',
-            tool_name: c.name,
-            tool_input: c.input,
-            tool_response: result,
-            session_id: sessionId,
-            cwd: context.cwd,
-          },
-          { matcherQuery: c.name, signal: context.abortSignal },
-        )
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err)
-        result = `Error: ${errMsg}`
-        await executeHooks(
-          {
-            hook_event_name: 'PostToolUseFailure',
-            tool_name: c.name,
-            tool_input: c.input,
-            tool_error: errMsg,
-            session_id: sessionId,
-            cwd: context.cwd,
-          },
-          { matcherQuery: c.name, signal: context.abortSignal },
-        )
-      }
+      const tool = findTool(toolUse.name, tools) ?? findTool(toolUse.name, context.tools)
+      allowed.push({ toolUse, tool })
     }
-
-    toolResults.push({ type: 'tool_result', tool_use_id: c.id, content: result })
-    yield { type: 'tool_result', tool_use_id: c.id, content: result }
   }
 
-  return toolResults
+  return { allowed, denied }
 }
 
-// ── 默认 canUseTool（空方法占位，后续由 REPL 注入实际实现）────────────────────
+// ── 并发工具执行 ────────────────────────────────────────────────────────────
 
-/** 默认全部允许（REPL 会传入实际的 canUseTool 弹窗逻辑） */
+async function* executeToolsConcurrently(
+  allowed: Array<{ toolUse: ToolUseContent; tool: Tool | undefined }>,
+  denied: Array<{ toolUse: ToolUseContent; reason: string }>,
+  context: ToolUseContext,
+  sessionId: string,
+): AsyncGenerator<StreamEvent, { content: UserMessage['content']; toolUseResults: Record<string, unknown> }> {
+  // Step 1: Execute all allowed tools concurrently
+  const results = await Promise.allSettled(
+    allowed.map(async ({ toolUse, tool }) => {
+      let toolContent: ToolResultContent['content']
+      let toolOutput: unknown = undefined
+
+      if (!tool) {
+        toolContent = `Error: tool "${toolUse.name}" not found`
+      } else {
+        try {
+          if (tool.callWithBlocks) {
+            toolContent = await tool.callWithBlocks(toolUse.input, context)
+          } else {
+            const result = await tool.call(toolUse.input, context)
+
+            // 保存原始输出（用于 UI 渲染）
+            toolOutput = result.data
+
+            // 调用 mapToolResultToToolResultBlockParam 将 Output 转换为 API 格式
+            const mappedResult = tool.mapToolResultToToolResultBlockParam(result.data, toolUse.id)
+
+            // 提取 content 并应用 processToolResult 进行持久化处理
+            const rawContent = typeof mappedResult.content === 'string'
+              ? mappedResult.content
+              : JSON.stringify(mappedResult.content)
+
+            const processedContent = await processToolResult(
+              toolUse.id,
+              toolUse.name,
+              rawContent,
+              tool.maxResultSizeChars ?? DEFAULT_MAX_RESULT_SIZE_CHARS,
+            )
+
+            // 如果原始 content 是 array，保持 array 格式；否则使用处理后的字符串
+            toolContent = Array.isArray(mappedResult.content) ? mappedResult.content : processedContent
+          }
+
+          // PostToolUse hook
+          const resultStr = Array.isArray(toolContent)
+            ? toolContent.filter(b => b.type === 'text').map(b => (b as { type: 'text'; text: string }).text).join('\n')
+            : toolContent
+          await executeHooks(
+            {
+              hook_event_name: 'PostToolUse',
+              tool_name: toolUse.name,
+              tool_input: toolUse.input,
+              tool_response: resultStr,
+              session_id: sessionId,
+              cwd: context.cwd,
+            },
+            { matcherQuery: toolUse.name, signal: context.abortSignal },
+          )
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err)
+          toolContent = `Error: ${errMsg}`
+
+          // PostToolUseFailure hook
+          await executeHooks(
+            {
+              hook_event_name: 'PostToolUseFailure',
+              tool_name: toolUse.name,
+              tool_input: toolUse.input,
+              tool_error: errMsg,
+              session_id: sessionId,
+              cwd: context.cwd,
+            },
+            { matcherQuery: toolUse.name, signal: context.abortSignal },
+          )
+        }
+      }
+
+      return { toolUse, toolContent, toolOutput }
+    })
+  )
+
+  // Step 4: Build ordered tool results array (matching original order)
+  const toolResults: UserMessage['content'] = []
+  const toolUseResults: Record<string, unknown> = {}
+
+  // First add denied tools
+  for (const { toolUse } of denied) {
+    toolResults.push({
+      type: 'tool_result',
+      tool_use_id: toolUse.id,
+      content: 'Tool use was denied by the user.',
+    })
+  }
+
+  // Then add executed tools (in original order)
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i]
+    const { toolUse } = allowed[i]
+
+    let content: ToolResultContent['content']
+    if (result.status === 'fulfilled') {
+      content = result.value.toolContent
+      // 保存原始输出到 toolUseResults
+      if (result.value.toolOutput !== undefined) {
+        toolUseResults[toolUse.id] = result.value.toolOutput
+      }
+    } else {
+      content = `Error: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`
+    }
+
+    toolResults.push({
+      type: 'tool_result',
+      tool_use_id: toolUse.id,
+      content,
+    })
+
+    // Yield tool_result event
+    const yieldContent = Array.isArray(content)
+      ? content.filter(b => b.type === 'text').map(b => (b as { type: 'text'; text: string }).text).join('\n')
+      : content
+    yield { type: 'tool_result', tool_use_id: toolUse.id, content: yieldContent }
+  }
+
+  return { content: toolResults, toolUseResults }
+}
+
+// ── 默认 canUseTool ────────────────────────────────────────────────────────────
+
 async function defaultCanUseTool(_name: string, _input: unknown): Promise<'allow' | 'deny'> {
   return 'allow'
 }
@@ -267,23 +371,22 @@ async function defaultCanUseTool(_name: string, _input: unknown): Promise<'allow
 // ── 主循环（对标 Claude Code queryLoop）──────────────────────────────────────
 
 /**
- * 核心主循环：调用 API，流式 yield 事件，支持多轮工具调用
+ * 核心主循环：调用 API，流式 yield 事件，支持多轮工具调用。
  *
- * 使用方式（在 REPL.tsx 中）：
- *   for await (const event of query(params)) {
- *     if (event.type === 'text_delta') { ... }
- *     if (event.type === 'tool_use') { ... }
- *     if (event.type === 'done') break
- *   }
+ * messages 语义（对标 CC state.messages）：
+ *   - working set，存储 boundary 之后的内容
+ *   - 每轮末尾重建：messages = [...messagesForQuery, ...assistant, ...toolResults]
+ *   - snip/microcompact 结果通过轮末重建自动持久化，下一轮不重复计算
+ *   - autocompact 成功后 messagesForQuery = postCompactMessages，messages 随之缩短
  */
 export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
   const {
-    messages,
+    messages: initialMessages,
     tools,
     allTools,
     systemPrompt,
     model = process.env.PI_MODEL ?? 'deepseek-chat',
-    maxTurns = 10,
+    maxTurns,
     abortSignal,
     canUseTool = defaultCanUseTool,
     askUser,
@@ -298,11 +401,10 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
 
   await initTaskStore()
 
-  // ToolUseContext 在整个 query 生命周期内复用
   const toolUseContext: ToolUseContext = {
     abortSignal: abortSignal ?? new AbortController().signal,
     cwd: process.cwd(),
-    tools: allTools ?? tools, // ToolSearchTool 能看到所有工具，包括 deferLoading 的
+    tools: allTools ?? tools,
     getAppState,
     setAppState,
     askUser,
@@ -312,21 +414,55 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
     onExit,
   }
 
-  const client = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    baseURL: process.env.PI_BASE_URL,
-  })
+  const client = createAnthropicClient()
 
-  // currentMessages 会在每一轮后持续扩展，形成“assistant -> tool_result -> assistant”的链路。
-  let currentMessages = [...messages]
+  // working set — 对标 CC state.messages
+  // 初始值来自调用方（REPL 传入 conversationRef.current）
+  // Stamp any user messages that don't have a uuid yet (e.g. the new message from REPL)
+  let messages: Message[] = initialMessages.map(msg =>
+    msg.type === 'user' && !msg.uuid && !msg.isMeta
+      ? { ...msg, uuid: randomUUID() }
+      : msg,
+  )
   let turnCount = 0
+  let maxTokensRecoveryAttempts = 0
+  let apiRetryAttempts = 0
+  const replacementState = createContentReplacementState()
+  // Per-query tracking，不跨 session 污染
+  let tracking: AutoCompactTracking = createAutoCompactTracking()
 
   // ── 主循环 ────────────────────────────────────────────────────────────────
   while (true) {
-    // ── Auto compact check ──────────────────────────────────────────────
-    const compactResult = await autoCompactIfNeeded(currentMessages)
+    // 每轮从 working set 中取 boundary 之后的消息，过滤 snipped 消息
+    let messagesForQuery = getMessagesAfterCompactBoundary(messages)
+
+    // Layer 2: 卸载大工具结果（让 autoCompact token 计算更准确）
+    messagesForQuery = await enforceToolResultBudget(messagesForQuery, replacementState)
+
+    // Snip: 截断超出上下文窗口的旧消息（结果通过轮末重建写回 messages）
+    const snipResult = snipIfNeeded(messagesForQuery, getAutoCompactThreshold())
+    if (snipResult.didSnip) {
+      messagesForQuery = snipResult.messages
+      yield { type: 'snip_done', messagesRemoved: snipResult.messagesRemoved, tokensFreed: snipResult.tokensFreed }
+    }
+
+    // Microcompact: 清空旧 tool_result 内容（time-based）
+    const mcResult = microcompactIfNeeded(messagesForQuery)
+    if (mcResult.toolsCleared > 0) {
+      messagesForQuery = mcResult.messages
+      yield { type: 'microcompact_done', toolsCleared: mcResult.toolsCleared, tokensSaved: mcResult.tokensSaved }
+    }
+
+    // Autocompact: token 超阈值时调 API 做摘要压缩
+    const compactResult = await autoCompactIfNeeded(
+      messagesForQuery,
+      tracking,
+      { snipTokensFreed: snipResult.tokensFreed },
+    )
+    tracking = compactResult.tracking
     if (compactResult.wasCompacted && compactResult.result) {
-      currentMessages = compactResult.result.newMessages
+      messagesForQuery = compactResult.result.newMessages
+      runPostCompactCleanup()
       yield { type: 'compact_start' }
       yield {
         type: 'compact_done',
@@ -341,28 +477,99 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
       return
     }
 
-    // maxTurns 检查（对标 Claude Code max_turns_reached）
-    if (turnCount >= maxTurns) {
-      yield { type: 'messages_snapshot', messages: [...currentMessages] }
-      yield { type: 'max_turns_reached', turnCount }
-      return
-    }
-
-    // 每轮 API 调用开始前通知（对标 Claude Code stream_request_start）
     yield { type: 'stream_request_start' }
-    turnCount++
 
-    // ── 单轮流式调用 ────────────────────────────────────────────────────────
-    let assistantContent: AssistantMessage['content']
+    // ── 单轮流式调用（内联逻辑，支持并发工具执行）────────────────────────────
+    let assistantContent: AssistantMessage['content'] = []
+    let stopReason: string | null = null
+    let hasToolUse = false
+    const pendingToolUses: ToolUseContent[] = []
+
     try {
-      assistantContent = yield* streamOneTurn(client, {
-        model,
-        systemPrompt,
-        messages: currentMessages,
-        tools,
-        abortSignal,
-      })
+      const thinkingParams = getThinkingParams(model)
+      const sdkMessages = toSDKMessages(messagesForQuery, model)
+      const sdkTools = tools.map(toSDKTool)
+
+      const stream = client.messages.stream(
+        {
+          model,
+          system: systemPrompt,
+          messages: sdkMessages,
+          tools: sdkTools,
+          max_tokens: thinkingParams.thinking
+            ? thinkingParams.max_tokens ?? 16000
+            : 16000,
+          ...(thinkingParams.thinking ? { thinking: thinkingParams.thinking } : {}),
+        },
+        { signal: abortSignal },
+      )
+
+      for await (const event of stream) {
+        if (event.type === 'content_block_start') {
+          if (event.content_block.type === 'text') {
+            assistantContent.push({ type: 'text', text: '' })
+          } else if (event.content_block.type === 'thinking') {
+            assistantContent.push({ type: 'thinking', thinking: '' })
+          } else if (event.content_block.type === 'tool_use') {
+            hasToolUse = true
+            assistantContent.push({
+              type: 'tool_use',
+              id: event.content_block.id,
+              name: event.content_block.name,
+              input: {},
+            })
+          }
+        } else if (event.type === 'content_block_delta') {
+          const last = assistantContent[assistantContent.length - 1]
+          if (!last) continue
+          if (event.delta.type === 'text_delta' && last.type === 'text') {
+            last.text += event.delta.text
+            yield { type: 'text_delta', delta: event.delta.text }
+          } else if (event.delta.type === 'thinking_delta' && last.type === 'thinking') {
+            last.thinking += event.delta.thinking
+            yield { type: 'thinking_delta', delta: event.delta.thinking }
+          } else if (event.delta.type === 'input_json_delta' && last.type === 'tool_use') {
+            if (!('_inputJson' in last)) {
+              (last as { _inputJson?: string })._inputJson = ''
+            }
+            ;(last as { _inputJson?: string })._inputJson! += event.delta.partial_json
+          }
+        } else if (event.type === 'content_block_stop') {
+          const last = assistantContent[assistantContent.length - 1]
+          if (last?.type === 'tool_use' && '_inputJson' in last) {
+            try {
+              last.input = JSON.parse((last as { _inputJson?: string })._inputJson ?? '{}')
+            } catch {
+              last.input = {}
+            }
+            delete (last as { _inputJson?: string })._inputJson
+
+            // Collect tool_use for concurrent execution
+            pendingToolUses.push(last as ToolUseContent)
+            yield {
+              type: 'tool_use',
+              id: last.id,
+              name: last.name,
+              input: last.input,
+            }
+          }
+        } else if (event.type === 'message_delta') {
+          stopReason = event.delta.stop_reason ?? null
+        }
+      }
+
+      stopReason = hasToolUse ? 'tool_use' : stopReason
     } catch (err) {
+      if (isRetryable(err) && apiRetryAttempts < 5) {
+        apiRetryAttempts++
+        const delay = getRetryDelay(apiRetryAttempts)
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, delay)
+          abortSignal?.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('Aborted')) }, { once: true })
+        })
+        continue
+      }
+      apiRetryAttempts = 0
       await executeHooks({
         hook_event_name: 'StopFailure',
         error: err instanceof Error ? err.message : String(err),
@@ -372,41 +579,116 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
       yield { type: 'error', error: err instanceof Error ? err : new Error(String(err)) }
       return
     }
+    apiRetryAttempts = 0
 
-    // 将 assistant 消息追加到历史
-    currentMessages.push({ type: 'assistant', content: assistantContent })
+    // assistant 消息追加到 messagesForQuery（含 timestamp，供 microcompact 使用）
+    const assistantMsg: AssistantMessage = {
+      type: 'assistant',
+      content: assistantContent,
+      timestamp: new Date().toISOString(),
+    }
+
+    // ── max_tokens 续写恢复 ────────────────────────────────────────────────
+    if (stopReason === 'max_tokens') {
+      if (maxTokensRecoveryAttempts < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT) {
+        maxTokensRecoveryAttempts++
+        const recoveryMsg: UserMessage = {
+          type: 'user',
+          content: [{
+            type: 'text',
+            text: 'Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.',
+          }],
+          isMeta: true,
+        }
+        // 轮末重建（对标 CC continue site）
+        messages = [...messagesForQuery, assistantMsg, recoveryMsg]
+        continue
+      }
+      // 超过重试上限
+      messages = [...messagesForQuery, assistantMsg]
+      yield { type: 'messages_snapshot', messages: [...messages] }
+      yield { type: 'output_truncated' }
+      return
+    }
+
+    maxTokensRecoveryAttempts = 0
 
     // ── 检查是否有工具调用 ──────────────────────────────────────────────────
-    const toolUses = assistantContent.filter((c) => c.type === 'tool_use')
-    if (toolUses.length === 0) {
-      // 无工具调用 → 对话结束，先快照当前完整消息供下一轮使用
-      yield { type: 'messages_snapshot', messages: [...currentMessages] }
-      await executeHooks({
+    // 使用 pendingToolUses.length 而不是 stopReason，因为 stopReason 不可靠
+    // 参考: Claude Code query.ts:554 注释
+    if (pendingToolUses.length === 0) {
+      // 无工具调用 → 对话结束，轮末重建后 yield 快照
+      messages = [...messagesForQuery, assistantMsg]
+      yield { type: 'messages_snapshot', messages: [...messages] }
+      const stopHookResult = await executeHooks({
         hook_event_name: 'Stop',
         stop_reason: 'done',
         session_id: sessionId,
         cwd: toolUseContext.cwd,
-        messages: currentMessages,
+        messages,
       })
+      // Stop hook blocking 重试（对标 CC blockingErrors）
+      if (stopHookResult.blockingErrors?.length) {
+        messages = [...messages, ...stopHookResult.blockingErrors]
+        continue
+      }
       yield { type: 'done' }
       return
     }
 
-    // ── 执行工具（含权限检查）──────────────────────────────────────────────
-    const toolResults = yield* executeTools(assistantContent, tools, canUseTool, toolUseContext, sessionId)
+    // ── maxTurns 检查 ──────────────────────────────────────────────────────────
+    // 有工具调用，但已达到轮数上限
+    turnCount++
+    if (maxTurns && turnCount > maxTurns) {
+      yield { type: 'max_turns_reached', turnCount: maxTurns }
+      return
+    }
 
-    // tool_result 作为 user 消息回灌给模型，这是 Anthropic 工具调用协议要求的格式。
-    currentMessages.push({ type: 'user', content: toolResults })
+    // ── 并发执行工具（含权限检查）──────────────────────────────────────────────
+    const permissionResult = yield* checkToolPermissions(
+      pendingToolUses,
+      tools,
+      canUseTool,
+      toolUseContext,
+      sessionId,
+    )
 
-    // Todo reminder 注入（对标 Claude Code getTodoReminderAttachments）
-    // 上下文压缩后 todo_write 历史消失，turnsSinceLastTodoWrite 会变大，
-    // 触发注入让模型重新感知当前任务状态。
+    const toolResultData = yield* executeToolsConcurrently(
+      permissionResult.allowed,
+      permissionResult.denied,
+      toolUseContext,
+      sessionId,
+    )
+
+    const toolResultMsg: UserMessage = {
+      type: 'user',
+      content: toolResultData.content,
+      toolUseResults: Object.keys(toolResultData.toolUseResults).length > 0
+        ? toolResultData.toolUseResults
+        : undefined,
+    }
+
+    // Todo reminder 注入
     const todoReminder = buildTodoReminderIfNeeded(
-      currentMessages,
+      [...messagesForQuery, assistantMsg, toolResultMsg],
       getAppState().todos,
     )
+
+    // 轮末重建 messages（对标 CC continue site）
+    // snip/microcompact 结果通过 messagesForQuery 自动持久化
     if (todoReminder) {
-      currentMessages.push(todoReminder)
+      messages = [...messagesForQuery, assistantMsg, toolResultMsg, todoReminder]
+    } else {
+      messages = [...messagesForQuery, assistantMsg, toolResultMsg]
+    }
+
+    // 每轮工具调用后 yield 快照，让 REPL conversationRef 保持最新
+    yield { type: 'messages_snapshot', messages: [...messages] }
+
+    // 对标 CC：用户 Ctrl+C 中断（interrupt）时，工具已执行完但不继续下一轮
+    if (abortSignal?.aborted && abortSignal.reason === 'interrupt') {
+      yield { type: 'done' }
+      return
     }
   }
 }

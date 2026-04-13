@@ -1,5 +1,5 @@
 import React from 'react'
-import Anthropic from '@anthropic-ai/sdk'
+import { createAnthropicClient } from '../../anthropic.js'
 import TurndownService from 'turndown'
 import { buildTool } from '../../Tool.js'
 import { DESCRIPTION, SEARCH_HINT } from './prompt.js'
@@ -78,10 +78,7 @@ async function fetchPage(url: string): Promise<{ markdown: string; error?: strin
 }
 
 async function applyPrompt(url: string, markdown: string, prompt: string): Promise<string> {
-  const client = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    baseURL: process.env.PI_BASE_URL,
-  })
+  const client = createAnthropicClient()
 
   try {
     const response = await client.messages.create({
@@ -108,6 +105,7 @@ export const WebFetchTool = buildTool({
   name: 'web_fetch',
   description: DESCRIPTION,
   searchHint: SEARCH_HINT,
+  maxResultSizeChars: Infinity, // 自己管理截断（MAX_MD_CHARS）
   inputSchema: {
     type: 'object',
     properties: {
@@ -130,7 +128,14 @@ export const WebFetchTool = buildTool({
   async call(input, _context) {
     const { url, prompt } = input as { url: string; prompt: string }
     const { markdown, error } = await fetchPage(url)
-    if (error) return error
-    return applyPrompt(url, markdown, prompt)
+    if (error) return { data: error }
+    return { data: await applyPrompt(url, markdown, prompt) }
+  },
+  mapToolResultToToolResultBlockParam(data, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: data,
+    }
   },
 })

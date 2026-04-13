@@ -20,7 +20,14 @@ export const CronDeleteTool = buildTool({
   async call(input) {
     const { id } = input as { id: string }
     const removed = removeCronTask(id)
-    if (!removed) return `ERROR: No scheduled job with id '${id}'.`
-    return `Cancelled job ${id}.`
+    if (!removed) return { data: `ERROR: No scheduled job with id '${id}'.` }
+    return { data: `Cancelled job ${id}.` }
+  },
+  mapToolResultToToolResultBlockParam(output, toolUseId) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: output,
+    }
   },
 })

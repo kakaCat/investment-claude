@@ -1,0 +1,1 @@
+Tool registry and implementations (src/tools/). Each tool is a directory with a main implementation file (.tsx), a prompt.ts (description/schema), and a UI.tsx (Ink rendering of tool use/result). Tools cover: file ops, bash, web fetch, task management, agent spawning, cron, skills, memory search, plan mode, and more.
