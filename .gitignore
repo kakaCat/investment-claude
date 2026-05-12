@@ -3,4 +3,12 @@ dist/
 *.log
 .env
 .env.local
-.pi/
+# Investment data (symlinks to pi-investment)
+.pi/portfolio.json
+.pi/watchlist.json
+.pi/cash.json
+.pi/reviews
+.pi/trade-log
+.pi/logs/
+.pi/sessions/
+data/
