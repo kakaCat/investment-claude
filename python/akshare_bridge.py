@@ -1615,7 +1615,13 @@ def get_hk_analysis(symbol: str) -> dict:
 
 
 def manage_portfolio(
-    action: str, symbol: str = None, quantity: int = None, avg_cost: float = None, notes: str = ""
+    action: str,
+    symbol: str = None,
+    name: str = None,
+    market: str = "A",
+    quantity: int = None,
+    avg_cost: float = None,
+    notes: str = "",
 ) -> dict:
     import os
     from datetime import datetime
@@ -1631,21 +1637,97 @@ def manage_portfolio(
 
     if action == "get":
         return data
+
+    elif action == "get_with_pnl":
+        holdings_out = []
+        total_cost = 0.0
+        total_value = 0.0
+        for h in data.get("holdings", []):
+            sym = h["symbol"]
+            qty = _safe_float(h.get("quantity", 0), decimals=0)
+            cost = _safe_float(h.get("avg_cost", 0), decimals=4)
+            h_market = h.get("market", "A")
+            # Fetch current price
+            current_price = cost  # fallback
+            change_pct = 0.0
+            try:
+                if h_market == "HK":
+                    price_data = get_hk_stock_price(sym)
+                else:
+                    price_data = get_stock_realtime_price(sym)
+                fetched = _safe_float(
+                    price_data.get("current_price", price_data.get("price", 0)),
+                    decimals=4,
+                )
+                if fetched > 0:
+                    current_price = fetched
+                change_pct = _safe_float(
+                    price_data.get("change_pct", price_data.get("pct_change", 0))
+                )
+            except Exception:
+                pass
+            market_value = _safe_float(qty * current_price, decimals=2)
+            cost_total = _safe_float(qty * cost, decimals=2)
+            pnl_amount = _safe_float(market_value - cost_total, decimals=2)
+            pnl_pct = _safe_float((current_price / cost - 1) * 100 if cost > 0 else 0, decimals=2)
+            total_cost += cost_total
+            total_value += market_value
+            holdings_out.append(
+                {
+                    **h,
+                    "current_price": current_price,
+                    "change_pct": change_pct,
+                    "market_value": market_value,
+                    "pnl_amount": pnl_amount,
+                    "pnl_pct": pnl_pct,
+                }
+            )
+        total_pnl = _safe_float(total_value - total_cost, decimals=2)
+        total_pnl_pct = _safe_float(
+            (total_value / total_cost - 1) * 100 if total_cost > 0 else 0, decimals=2
+        )
+        return {
+            "holdings": holdings_out,
+            "total_cost": _safe_float(total_cost, decimals=2),
+            "total_value": _safe_float(total_value, decimals=2),
+            "total_pnl": total_pnl,
+            "total_pnl_pct": total_pnl_pct,
+            "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
     elif action == "add" and symbol:
         holdings = data["holdings"]
         existing = next((h for h in holdings if h["symbol"] == symbol), None)
         if existing:
-            existing.update(
-                {
-                    "quantity": quantity or existing["quantity"],
-                    "avg_cost": avg_cost or existing["avg_cost"],
-                    "notes": notes,
-                }
-            )
+            old_qty = _safe_float(existing.get("quantity", 0), decimals=0)
+            old_cost = _safe_float(existing.get("avg_cost", 0), decimals=4)
+            new_qty = _safe_float(quantity or 0, decimals=0)
+            new_price = _safe_float(avg_cost or 0, decimals=4)
+            if new_qty > 0 and new_price > 0:
+                total_qty = old_qty + new_qty
+                weighted_cost = _safe_float(
+                    (old_qty * old_cost + new_qty * new_price) / total_qty if total_qty > 0 else 0,
+                    decimals=4,
+                )
+                existing["quantity"] = int(total_qty)
+                existing["avg_cost"] = weighted_cost
+            else:
+                if quantity is not None:
+                    existing["quantity"] = quantity
+                if avg_cost is not None:
+                    existing["avg_cost"] = avg_cost
+            if name:
+                existing["name"] = name
+            if market:
+                existing["market"] = market
+            if notes:
+                existing["notes"] = notes
         else:
             holdings.append(
                 {
                     "symbol": symbol,
+                    "name": name or "",
+                    "market": market,
                     "quantity": quantity or 0,
                     "avg_cost": avg_cost or 0,
                     "notes": notes,
@@ -1656,12 +1738,340 @@ def manage_portfolio(
         with open(portfolio_path, "w") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return {"success": True, "message": f"已添加/更新 {symbol}"}
+
+    elif action == "update" and symbol:
+        holdings = data["holdings"]
+        existing = next((h for h in holdings if h["symbol"] == symbol), None)
+        if not existing:
+            return {"error": f"持仓中未找到 {symbol}"}
+        if quantity is not None:
+            existing["quantity"] = quantity
+        if avg_cost is not None:
+            existing["avg_cost"] = avg_cost
+        if notes:
+            existing["notes"] = notes
+        if name:
+            existing["name"] = name
+        data["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(portfolio_path, "w") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return {"success": True, "message": f"已更新 {symbol}"}
+
     elif action == "remove" and symbol:
         data["holdings"] = [h for h in data["holdings"] if h["symbol"] != symbol]
         data["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open(portfolio_path, "w") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return {"success": True, "message": f"已删除 {symbol}"}
+
+    return {"error": f"未知操作: {action}"}
+
+
+# ===== Cash management =====
+
+
+def manage_cash(action: str = "get", amount: float = None, reason: str = "") -> dict:
+    import os
+    from datetime import datetime
+
+    cash_path = os.path.join(os.getcwd(), ".pi", "cash.json")
+    os.makedirs(os.path.dirname(cash_path), exist_ok=True)
+
+    if not os.path.exists(cash_path):
+        data = {"available_cash": 0, "currency": "CNY", "last_updated": "", "notes": ""}
+    else:
+        with open(cash_path) as f:
+            data = json.load(f)
+
+    if action == "get":
+        return data
+    elif action == "update" and amount is not None:
+        data["available_cash"] = _safe_float(amount, decimals=2)
+        data["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        data["notes"] = reason
+        with open(cash_path, "w") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return {"success": True, "message": f"现金已更新为 {amount}"}
+    return {"error": f"未知操作: {action}"}
+
+
+# ===== Watchlist =====
+
+
+def manage_watchlist(
+    action: str = "list",
+    symbol: str = None,
+    name: str = None,
+    market: str = "A",
+    buy_range_low: float = None,
+    buy_range_high: float = None,
+    target_price: float = None,
+    stop_loss: float = None,
+    priority: int = 3,
+    pool: str = "B",
+    status: str = "watching",
+    reason: str = "",
+    notes: str = "",
+) -> dict:
+    import os
+    from datetime import datetime
+
+    wl_path = os.path.join(os.getcwd(), ".pi", "watchlist.json")
+    os.makedirs(os.path.dirname(wl_path), exist_ok=True)
+
+    if not os.path.exists(wl_path):
+        data = {"items": [], "last_updated": ""}
+    else:
+        with open(wl_path) as f:
+            data = json.load(f)
+
+    if action == "list":
+        return data
+
+    elif action == "add" and symbol:
+        items = data["items"]
+        existing = next((it for it in items if it["symbol"] == symbol), None)
+        if existing:
+            return {"error": f"{symbol} 已在观察列表中，请使用 update 操作"}
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        items.append(
+            {
+                "symbol": symbol,
+                "name": name or "",
+                "market": market,
+                "buy_range_low": buy_range_low,
+                "buy_range_high": buy_range_high,
+                "target_price": target_price,
+                "stop_loss": stop_loss,
+                "priority": priority,
+                "pool": pool,
+                "status": status,
+                "reason": reason,
+                "notes": notes,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+        data["last_updated"] = now
+        with open(wl_path, "w") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return {"success": True, "message": f"已添加 {symbol} 到观察列表"}
+
+    elif action == "remove" and symbol:
+        data["items"] = [it for it in data["items"] if it["symbol"] != symbol]
+        data["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(wl_path, "w") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return {"success": True, "message": f"已从观察列表移除 {symbol}"}
+
+    elif action == "update" and symbol:
+        items = data["items"]
+        existing = next((it for it in items if it["symbol"] == symbol), None)
+        if not existing:
+            return {"error": f"观察列表中未找到 {symbol}"}
+        if name is not None:
+            existing["name"] = name
+        if market is not None:
+            existing["market"] = market
+        if buy_range_low is not None:
+            existing["buy_range_low"] = buy_range_low
+        if buy_range_high is not None:
+            existing["buy_range_high"] = buy_range_high
+        if target_price is not None:
+            existing["target_price"] = target_price
+        if stop_loss is not None:
+            existing["stop_loss"] = stop_loss
+        if priority is not None:
+            existing["priority"] = priority
+        if pool:
+            existing["pool"] = pool
+        if status:
+            existing["status"] = status
+        if reason:
+            existing["reason"] = reason
+        if notes:
+            existing["notes"] = notes
+        existing["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        data["last_updated"] = existing["updated_at"]
+        with open(wl_path, "w") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return {"success": True, "message": f"已更新 {symbol} 的观察信息"}
+
+    return {"error": f"未知操作: {action}"}
+
+
+# ===== Trade log =====
+
+
+def manage_trade_log(
+    action: str = "list", symbol: str = None, name: str = None, content: str = ""
+) -> dict:
+    import glob
+    import os
+    from datetime import datetime
+
+    log_dir = os.path.join(os.getcwd(), ".pi", "trade-log")
+    os.makedirs(log_dir, exist_ok=True)
+
+    if action == "list":
+        files = sorted(glob.glob(os.path.join(log_dir, "*.md")))
+        items = []
+        for f in files:
+            fname = os.path.basename(f)
+            items.append({"filename": fname, "path": f})
+        return {"files": items, "count": len(items)}
+
+    elif action == "read" and symbol:
+        pattern = os.path.join(log_dir, f"{symbol}-*.md")
+        matches = glob.glob(pattern)
+        if not matches:
+            return {"error": f"未找到 {symbol} 的交易日志"}
+        with open(matches[0]) as f:
+            text = f.read()
+        return {"filename": os.path.basename(matches[0]), "content": text}
+
+    elif action == "create" and symbol and name:
+        date = datetime.now().strftime("%Y-%m-%d")
+        filename = f"{symbol}-{name}.md"
+        filepath = os.path.join(log_dir, filename)
+        template = f"""# {name}（{symbol}）交易日志
+
+> 创建日期：{date}
+
+---
+
+## 📋 持仓总览
+
+| 项目 | 数值 |
+|------|------|
+| 总建仓股数 | - |
+| 加权成本 | - |
+| 总投入 | - |
+
+---
+
+## 🏗️ 建仓
+
+**买入逻辑：**
+- （待补充）
+
+**建仓记录：**
+| 日期 | 股数 | 价格 | 金额 |
+|------|------|------|------|
+
+---
+
+## 🎯 交易计划
+
+（待补充）
+"""
+        with open(filepath, "w") as f:
+            f.write(template)
+        return {"success": True, "message": f"已创建交易日志 {filename}", "path": filepath}
+
+    elif action == "append" and symbol and content:
+        pattern = os.path.join(log_dir, f"{symbol}-*.md")
+        matches = glob.glob(pattern)
+        if not matches:
+            return {"error": f"未找到 {symbol} 的交易日志，请先创建"}
+        with open(matches[0], "a") as f:
+            f.write("\n" + content + "\n")
+        return {"success": True, "message": f"已追加内容到 {os.path.basename(matches[0])}"}
+
+    return {"error": f"未知操作: {action}"}
+
+
+# ===== Daily review =====
+
+
+def daily_review(action: str = "generate", date: str = None) -> dict:
+    import glob
+    import os
+    from datetime import datetime
+
+    review_dir = os.path.join(os.getcwd(), ".pi", "reviews")
+    os.makedirs(review_dir, exist_ok=True)
+
+    if action == "list":
+        files = sorted(glob.glob(os.path.join(review_dir, "*.md")), reverse=True)
+        dates = [os.path.basename(f).replace(".md", "") for f in files]
+        return {"dates": dates, "count": len(dates)}
+
+    elif action == "read" and date:
+        filepath = os.path.join(review_dir, f"{date}.md")
+        if not os.path.exists(filepath):
+            return {"error": f"未找到 {date} 的复盘报告"}
+        with open(filepath) as f:
+            text = f.read()
+        return {"date": date, "content": text}
+
+    elif action == "generate":
+        today = date or datetime.now().strftime("%Y-%m-%d")
+        # Load portfolio
+        portfolio_path = os.path.join(os.getcwd(), ".pi", "portfolio.json")
+        if os.path.exists(portfolio_path):
+            with open(portfolio_path) as f:
+                portfolio = json.load(f)
+        else:
+            portfolio = {"holdings": []}
+
+        # Market overview
+        market_md = ""
+        try:
+            overview = get_market_overview()
+            indices = overview.get("indices", [])
+            if indices:
+                market_md = "## 📊 大盘概况\n\n| 指数 | 点位 | 涨跌幅 |\n|------|------|--------|\n"
+                for idx in indices:
+                    market_md += f"| {idx.get('name', '')} | {idx.get('close', '-')} | {idx.get('change_pct', '-')}% |\n"
+                market_md += "\n"
+        except Exception:
+            market_md = "## 📊 大盘概况\n\n（获取失败）\n\n"
+
+        # Holdings table
+        holdings_md = "## 💼 持仓明细\n\n| 代码 | 名称 | 成本 | 现价 | 盈亏% | 建议 |\n|------|------|------|------|-------|------|\n"
+        for h in portfolio.get("holdings", []):
+            sym = h["symbol"]
+            h_name = h.get("name", "")
+            cost = _safe_float(h.get("avg_cost", 0), decimals=2)
+            h_market = h.get("market", "A")
+            current_price = cost
+            try:
+                if h_market == "HK":
+                    price_data = get_hk_stock_price(sym)
+                else:
+                    price_data = get_stock_realtime_price(sym)
+                fetched = _safe_float(
+                    price_data.get("current_price", price_data.get("price", 0)),
+                    decimals=2,
+                )
+                if fetched > 0:
+                    current_price = fetched
+            except Exception:
+                pass
+            pnl_pct = _safe_float((current_price / cost - 1) * 100 if cost > 0 else 0, decimals=2)
+            holdings_md += f"| {sym} | {h_name} | {cost} | {current_price} | {pnl_pct}% | - |\n"
+
+        report = f"""# 每日复盘 - {today}
+
+> 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+---
+
+{market_md}---
+
+{holdings_md}
+---
+
+## 📝 总结与计划
+
+（待补充）
+"""
+        filepath = os.path.join(review_dir, f"{today}.md")
+        with open(filepath, "w") as f:
+            f.write(report)
+        return {"success": True, "date": today, "path": filepath, "content": report}
+
     return {"error": f"未知操作: {action}"}
 
 
@@ -2421,6 +2831,15 @@ FUNCTIONS = {
     "get_hk_analysis": get_hk_analysis,
     # ML
     "predict_signal_confidence": predict_signal_confidence,
+    # Macro (already defined but not registered)
+    "get_money_supply": get_money_supply,
+    "get_social_finance": get_social_finance,
+    "get_gdp_data": get_gdp_data,
+    # New business functions
+    "manage_watchlist": manage_watchlist,
+    "manage_trade_log": manage_trade_log,
+    "manage_cash": manage_cash,
+    "daily_review": daily_review,
     # Trading (Mock)
     "get_account_info": lambda: _call_trading_engine("get_account_info"),
     "get_positions": lambda: _call_trading_engine("get_positions"),
