@@ -18,7 +18,7 @@ investment-claude 已有成熟的 Agent 框架（query loop、Tool 接口、buil
 
 | # | 模块 | 改动范围 | 工作量 |
 |---|------|---------|--------|
-| 1 | Bootstrap 人格系统 | 新建 `.pi/bootstrap/` 4 个 md 文件 + `prompts.ts` 加载逻辑 | 中 |
+| 1 | Bootstrap 人格系统 | 新建 `.pi/bootstrap/` 3 个 md 文件 + `prompts.ts` 加载逻辑 | 中 |
 | 2 | 持仓管理完善 | `akshare_bridge.py` 完善 `manage_portfolio` + `InvestmentTool.tsx` 加 askUser | 中 |
 | 3 | 持仓盈亏感知 | `prompts.ts` 新增 volatileSection + Python 侧 `get_portfolio_pnl` | 中 |
 | 4 | Watchlist 观察清单 | `akshare_bridge.py` 新增函数 + `prompt.ts` 补文档 | 小 |
@@ -39,9 +39,10 @@ investment-claude 已有成熟的 Agent 框架（query loop、Tool 接口、buil
 | 文件 | 内容 | 来源 |
 |------|------|------|
 | `IDENTITY.md` | 决策者人格 — "不是建议者，是决策者"；禁止表达（"建议您考虑..."）；正确表达（"买入，分3次建仓"） | pi-investment IDENTITY.md |
-| `RULES.md` | 投资硬规则 — ROE≥12%/负债率<60%/毛利率>20%/质量≥65；PE分位<40%才算好价格；止损8%/止盈三档；数据诚信铁律（工具失败=停止，数据必须标注来源） | pi-investment SOUL.md |
 | `OUTPUT.md` | 三段式输出格式 — 【决策】买入/观望/回避 + 具体操作指令；【数据】质量/估值/走势一行摘要；【追问】引导用户深入 | pi-investment INVESTMENT_ADVICE.md |
-| `SCORING.md` | 交易决策评分体系 — 质量30%+估值25%+技术20%+量化25%；≥70分买入/50-69观望/<50回避；买入和卖出的具体信号条件 | pi-investment trade-decision SKILL |
+| `DATA_INTEGRITY.md` | 数据诚信铁律 — 工具失败=立即停止不编数据；所有数据必须标注来源（工具名+时间）；禁止用训练数据替代实时数据 | pi-investment SOUL.md |
+
+注意：不设硬编码选股标准和评分体系，AI 根据实际数据自行判断。
 
 ### 实现
 
@@ -52,7 +53,7 @@ investment-claude 已有成熟的 Agent 框架（query loop、Tool 接口、buil
 registerSection('bootstrap', async (ctx) => {
   const bootstrapDir = join(ctx.cwd, '.pi', 'bootstrap')
   if (!existsSync(bootstrapDir)) return null
-  const files = ['IDENTITY.md', 'RULES.md', 'OUTPUT.md', 'SCORING.md']
+  const files = ['IDENTITY.md', 'OUTPUT.md', 'DATA_INTEGRITY.md']
   const sections: string[] = []
   for (const file of files) {
     const filePath = join(bootstrapDir, file)
@@ -354,9 +355,8 @@ FUNCTIONS = {
 | 文件 | 操作 | 说明 |
 |------|------|------|
 | `.pi/bootstrap/IDENTITY.md` | 新建 | 决策者人格 |
-| `.pi/bootstrap/RULES.md` | 新建 | 投资硬规则 |
 | `.pi/bootstrap/OUTPUT.md` | 新建 | 三段式输出格式 |
-| `.pi/bootstrap/SCORING.md` | 新建 | 决策评分体系 |
+| `.pi/bootstrap/DATA_INTEGRITY.md` | 新建 | 数据诚信铁律 |
 | `python/akshare_bridge.py` | 修改 | 完善 manage_portfolio + 新增 watchlist/trade-log/review/cash 函数 + 注册遗漏 + 路径统一 |
 | `src/tools/InvestmentTool/InvestmentTool.tsx` | 修改 | 添加 askUser 写操作拦截 |
 | `src/tools/InvestmentTool/prompt.ts` | 修改 | 补充新函数文档 |
