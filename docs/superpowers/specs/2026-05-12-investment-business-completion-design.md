@@ -303,11 +303,25 @@ FUNCTIONS = {
 }
 ```
 
-### 7b. 路径统一
+### 7b. 路径统一 + 数据共享
 
-全局替换 `akshare_bridge.py` 中所有 `.pi-invest/` → `.pi/`：
-- `portfolio.json` 路径
-- 其他可能硬编码的路径
+代码中全局替换 `akshare_bridge.py` 中所有 `.pi-invest/` → `.pi/`。
+
+**数据共享方案：Symlink**
+
+两个项目共享同一份投资数据。在 `.pi/` 下用 symlink 指向 pi-investment 的数据：
+
+```
+.pi/
+├── bootstrap/           ← 本项目独有（不 symlink）
+├── portfolio.json       ← symlink → /Users/mac/Documents/ai/pi-investment/.pi-invest/portfolio.json
+├── watchlist.json       ← symlink → .../.pi-invest/watchlist.json
+├── cash.json            ← symlink → .../.pi-invest/cash.json
+├── reviews/             ← symlink → .../.pi-invest/reviews/
+└── trade-log/           ← symlink → .../.pi-invest/trade-log/
+```
+
+实现时在模块 7 中创建 `.pi/` 目录和 symlink。代码无需特殊处理，Node.js 和 Python 默认会 follow symlink。
 
 ### 7c. 提示词更新
 
