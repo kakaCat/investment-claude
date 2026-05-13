@@ -33,12 +33,18 @@ import { ExitTool } from './ExitTool/ExitTool.js'
 import { WebFetchTool } from './WebFetchTool/WebFetchTool.js'
 import { SnipTool } from './SnipTool/SnipTool.js'
 import { BrowserTool } from './BrowserTool/BrowserTool.js'
+import { InvestmentTool } from './InvestmentTool/InvestmentTool.js'
+import { QuantTool } from './QuantTool/QuantTool.js'
+import { SystemPromptTool } from './SystemPromptTool/SystemPromptTool.js'
 
 // 内置工具静态列表 — 新增工具在此 import + 加入数组
 const BUILTIN_TOOLS: Tool[] = [
   SnipTool,
   AgentTool,
   ExitTool,
+  InvestmentTool,
+  QuantTool,
+  SystemPromptTool,
   BashTool,
   ReadTool,
   FileWriteTool,
