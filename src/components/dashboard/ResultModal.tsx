@@ -11,10 +11,6 @@ export function ResultModal({ content }: Props) {
   return (
     <Box
       position="absolute"
-      width="80%"
-      height="60%"
-      left="10%"
-      top="20%"
       borderStyle="double"
       borderColor="cyan"
       padding={1}

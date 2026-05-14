@@ -108,15 +108,18 @@ export function Dashboard() {
 
   // 快捷键处理
   useInput((input, key) => {
+    // Modal has highest priority - any key closes it
     if (modalContent) {
       setModalContent(null)
       return
     }
 
+    // When in command mode, let CommandInput handle all input
     if (commandMode) {
       return
     }
 
+    // Dashboard shortcuts (only when not in command mode)
     if (input === ':') {
       setCommandMode(true)
     } else if (input === 'r') {
@@ -157,7 +160,11 @@ export function Dashboard() {
       </Box>
 
       {commandMode && (
-        <CommandInput onSubmit={handleCommand} onCancel={() => setCommandMode(false)} />
+        <CommandInput
+          onSubmit={handleCommand}
+          onCancel={() => setCommandMode(false)}
+          isActive={commandMode}
+        />
       )}
 
       {modalContent && <ResultModal content={modalContent} onClose={() => setModalContent(null)} />}
