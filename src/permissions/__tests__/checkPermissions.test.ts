@@ -35,6 +35,17 @@ describe('checkToolPermission', () => {
     expect(result.behavior).toBe('deny')
   })
 
+  it('Step 1: deny rule with content does not block non-matching action', () => {
+    const ctx: ToolPermissionContext = {
+      ...createEmptyPermissionContext(),
+      denyRules: { userSettings: ['Investment(manage_portfolio:remove)'], projectSettings: [], session: [] },
+    }
+    const tool = makeTool({ name: 'Investment' })
+    const result = checkToolPermission(tool, { function: 'manage_portfolio', action: 'add' }, ctx, 'manage_portfolio:add')
+    // Different action should not be denied by the 'remove' deny rule
+    expect(result.behavior).toBe('ask') // falls through to default ask since tool is non-readOnly
+  })
+
   it('Step 2: tool.checkPermissions deny is respected', () => {
     const tool = makeTool({
       checkPermissions: () => ({ behavior: 'deny', message: 'Tool says no' }),

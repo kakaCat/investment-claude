@@ -2,7 +2,21 @@
 // Permission checking pipeline — ref Claude Code src/utils/permissions/permissions.ts
 
 import type { PermissionDecision, ToolPermissionContext } from './types.js'
+import type { PermissionRuleSource } from './types.js'
 import { findMatchingRule } from './ruleMatching.js'
+
+function safeFindMatchingRule(
+  rules: Record<PermissionRuleSource, string[]> | undefined,
+  toolName: string,
+  contentString?: string,
+): ReturnType<typeof findMatchingRule> {
+  if (!rules) return null
+  try {
+    return findMatchingRule(rules, toolName, contentString)
+  } catch {
+    return null
+  }
+}
 
 /**
  * Minimal tool shape needed for permission checking.
@@ -34,7 +48,7 @@ export function checkToolPermission(
   contentString?: string,
 ): PermissionDecision {
   // Step 1: deny rules — highest priority
-  const denyRule = findMatchingRule(context.denyRules, tool.name, contentString)
+  const denyRule = safeFindMatchingRule(context.denyRules, tool.name, contentString)
   if (denyRule) {
     return { behavior: 'deny', message: `已被规则禁止: ${tool.name}` }
   }
@@ -54,7 +68,7 @@ export function checkToolPermission(
   }
 
   // Step 4: allow rules
-  const allowRule = findMatchingRule(context.allowRules, tool.name, contentString)
+  const allowRule = safeFindMatchingRule(context.allowRules, tool.name, contentString)
   if (allowRule) {
     return { behavior: 'allow' }
   }
