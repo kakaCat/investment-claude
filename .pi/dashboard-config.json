@@ -1,0 +1,22 @@
+{
+  "refreshInterval": 60,
+  "autoRefresh": true,
+  "theme": {
+    "profit": "green",
+    "loss": "red",
+    "neutral": "gray"
+  },
+  "panels": {
+    "portfolio": {
+      "maxRows": 10,
+      "sortBy": "marketValue"
+    },
+    "decisionLog": {
+      "maxRows": 5
+    },
+    "market": {
+      "indexCount": 3,
+      "watchlistMaxRows": 5
+    }
+  }
+}
