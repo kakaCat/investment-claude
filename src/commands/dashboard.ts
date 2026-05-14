@@ -54,15 +54,20 @@ function cyan(s: string) { return `${C.c}${s}${C.r}` }
 function bold(s: string) { return `${C.b}${s}${C.r}` }
 function colorPct(pct: number) { return pct > 0 ? green : red }
 
-// ── Divider ─────────────────────────────────────────────────────────────────
-// Terminal typical width: 80 cols. Use 76 for inner content + 2 for side borders.
+// ── Layout constants ────────────────────────────────────────────────────────
+// Terminal width: 80 cols
+// Box structure: │ [left 36] │ [right 36] │
+// Total: 1 + 1 + 36 + 1 + 1 + 1 + 36 + 1 = 78 cols
 
-const W = 76
-const HALF = 37
+const BOX_WIDTH = 78
+const LEFT_WIDTH = 36
+const RIGHT_WIDTH = 36
 
 function divider(char: string, left: string, mid: string, right: string): string {
-  const halfW = Math.floor((W - 1) / 2)
-  return `${cyan(left + char.repeat(halfW) + mid + char.repeat(W - 1 - halfW) + right)}`
+  // │────────────────────┬────────────────────│
+  const leftPart = char.repeat(LEFT_WIDTH + 1) // +1 for space after │
+  const rightPart = char.repeat(RIGHT_WIDTH + 1) // +1 for space before │
+  return cyan(left + leftPart + mid + rightPart + right)
 }
 
 // ── Data loading ────────────────────────────────────────────────────────────
@@ -235,13 +240,11 @@ function renderAlerts(alerts: string[]): string[] {
 function sideBySide(left: string[], right: string[]): string[] {
   const lines: string[] = []
   const maxLen = Math.max(left.length, right.length)
-  const leftW = HALF
-  const rightW = W - 1 - HALF
 
   for (let i = 0; i < maxLen; i++) {
     const l = left[i] ?? ''
     const r = right[i] ?? ''
-    lines.push(`${cyan('│')} ${pad(l, leftW)} ${cyan('│')} ${pad(r, rightW)}${cyan('│')}`)
+    lines.push(`${cyan('│')} ${pad(l, LEFT_WIDTH)} ${cyan('│')} ${pad(r, RIGHT_WIDTH)} ${cyan('│')}`)
   }
   return lines
 }
@@ -262,8 +265,8 @@ registerCommand({
 
     const lines: string[] = []
     lines.push('')
-    lines.push(cyan('┌' + '─'.repeat(W) + '┐'))
-    lines.push(`${cyan('│')}  ${bold('📊 投资仪表盘')}${' '.repeat(W - 13)}${cyan('│')}`)
+    lines.push(cyan('┌' + '─'.repeat(BOX_WIDTH - 2) + '┐'))
+    lines.push(`${cyan('│')}  ${bold('📊 投资仪表盘')}${' '.repeat(BOX_WIDTH - 15)}${cyan('│')}`)
     lines.push(divider('─', '├', '┬', '┤'))
 
     // Panel 1: Portfolio (left) | Decisions (right)
@@ -278,7 +281,7 @@ registerCommand({
     const alLines = renderAlerts(alerts)
     lines.push(...sideBySide(wlLines, alLines))
 
-    lines.push(cyan('└' + '─'.repeat(W) + '┘'))
+    lines.push(cyan('└' + '─'.repeat(BOX_WIDTH - 2) + '┘'))
     lines.push('')
     lines.push(dim('提示: / 命令模式 | ↑↓ 滚动 | Ctrl+C 中断'))
 
