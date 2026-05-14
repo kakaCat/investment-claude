@@ -55,18 +55,28 @@ function bold(s: string) { return `${C.b}${s}${C.r}` }
 function colorPct(pct: number) { return pct > 0 ? green : red }
 
 // ── Layout constants ────────────────────────────────────────────────────────
-// Terminal width: 80 cols
-// Box structure: │ [left 36] │ [right 36] │
-// Total: 1 + 1 + 36 + 1 + 1 + 1 + 36 + 1 = 78 cols
+// Dynamically adapt to terminal width, default to 70 cols for safety
+// Box structure: │ [left] │ [right] │
 
-const BOX_WIDTH = 78
-const LEFT_WIDTH = 36
-const RIGHT_WIDTH = 36
+function getBoxWidth(): number {
+  const termWidth = process.stdout.columns || 80
+  // Leave some margin for REPL UI, use 70 cols max
+  return Math.min(70, termWidth - 4)
+}
 
-function divider(char: string, left: string, mid: string, right: string): string {
+function getContentWidths(boxWidth: number) {
+  // Total: 1 + 1 + left + 1 + 1 + 1 + right + 1 = left + right + 7
+  // So: left + right = boxWidth - 7
+  const totalContent = boxWidth - 7
+  const leftWidth = Math.floor(totalContent / 2)
+  const rightWidth = totalContent - leftWidth
+  return { leftWidth, rightWidth }
+}
+
+function divider(char: string, left: string, mid: string, right: string, boxWidth: number, leftWidth: number): string {
   // │────────────────────┬────────────────────│
-  const leftPart = char.repeat(LEFT_WIDTH + 1) // +1 for space after │
-  const rightPart = char.repeat(RIGHT_WIDTH + 1) // +1 for space before │
+  const leftPart = char.repeat(leftWidth + 1) // +1 for space after │
+  const rightPart = char.repeat(boxWidth - leftWidth - 3) // remaining space
   return cyan(left + leftPart + mid + rightPart + right)
 }
 
@@ -237,14 +247,14 @@ function renderAlerts(alerts: string[]): string[] {
 
 // ── Side-by-side layout ─────────────────────────────────────────────────────
 
-function sideBySide(left: string[], right: string[]): string[] {
+function sideBySide(left: string[], right: string[], leftWidth: number, rightWidth: number): string[] {
   const lines: string[] = []
   const maxLen = Math.max(left.length, right.length)
 
   for (let i = 0; i < maxLen; i++) {
     const l = left[i] ?? ''
     const r = right[i] ?? ''
-    lines.push(`${cyan('│')} ${pad(l, LEFT_WIDTH)} ${cyan('│')} ${pad(r, RIGHT_WIDTH)} ${cyan('│')}`)
+    lines.push(`${cyan('│')} ${pad(l, leftWidth)} ${cyan('│')} ${pad(r, rightWidth)} ${cyan('│')}`)
   }
   return lines
 }
@@ -263,25 +273,33 @@ registerCommand({
     ])
     const alerts = calcAlerts(portfolio, decisions)
 
+    const boxWidth = getBoxWidth()
+    const { leftWidth, rightWidth } = getContentWidths(boxWidth)
+
     const lines: string[] = []
     lines.push('')
-    lines.push(cyan('┌' + '─'.repeat(BOX_WIDTH - 2) + '┐'))
-    lines.push(`${cyan('│')}  ${bold('📊 投资仪表盘')}${' '.repeat(BOX_WIDTH - 15)}${cyan('│')}`)
-    lines.push(divider('─', '├', '┬', '┤'))
+    lines.push(cyan('┌' + '─'.repeat(boxWidth - 2) + '┐'))
+
+    const titleText = '📊 投资仪表盘'
+    const titleVisualWidth = visualWidth(titleText)
+    const titlePadding = boxWidth - titleVisualWidth - 4 // -4 for │ and spaces
+    lines.push(`${cyan('│')}  ${bold(titleText)}${' '.repeat(titlePadding)}${cyan('│')}`)
+
+    lines.push(divider('─', '├', '┬', '┤', boxWidth, leftWidth))
 
     // Panel 1: Portfolio (left) | Decisions (right)
     const pfLines = renderPortfolio(portfolio)
     const dcLines = renderDecisions(decisions)
-    lines.push(...sideBySide(pfLines, dcLines))
+    lines.push(...sideBySide(pfLines, dcLines, leftWidth, rightWidth))
 
-    lines.push(divider('─', '├', '┴', '┤'))
+    lines.push(divider('─', '├', '┴', '┤', boxWidth, leftWidth))
 
     // Panel 2: Watchlist (left) | Alerts (right)
     const wlLines = renderWatchlist(watchlist)
     const alLines = renderAlerts(alerts)
-    lines.push(...sideBySide(wlLines, alLines))
+    lines.push(...sideBySide(wlLines, alLines, leftWidth, rightWidth))
 
-    lines.push(cyan('└' + '─'.repeat(BOX_WIDTH - 2) + '┘'))
+    lines.push(cyan('└' + '─'.repeat(boxWidth - 2) + '┘'))
     lines.push('')
     lines.push(dim('提示: / 命令模式 | ↑↓ 滚动 | Ctrl+C 中断'))
 
