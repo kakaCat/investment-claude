@@ -237,9 +237,9 @@ export function buildTool<Input = unknown, Output = unknown>(
     renderToolUse: (input) => defaultRenderToolUse(def.name, input),
     renderToolResult: (result) => defaultRenderToolResult(result),
     checkPermissions: (_input: Input) => {
-      const isRO = def.isReadOnly?.() ?? false
-      if (isRO) return { behavior: 'allow' as const }
-      return { behavior: 'ask' as const, message: `确认使用 ${def.name}？` }
+      // 默认放行 — 需要权限控制的工具应自行实现 checkPermissions
+      // （如 InvestmentTool 对写操作返回 ask）
+      return { behavior: 'allow' as const }
     },
     ...def,
   }

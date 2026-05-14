@@ -43,7 +43,7 @@ describe('checkToolPermission', () => {
     const tool = makeTool({ name: 'Investment' })
     const result = checkToolPermission(tool, { function: 'manage_portfolio', action: 'add' }, ctx, 'manage_portfolio:add')
     // Different action should not be denied by the 'remove' deny rule
-    expect(result.behavior).toBe('ask') // falls through to default ask since tool is non-readOnly
+    expect(result.behavior).toBe('allow') // falls through to default allow since tool is non-readOnly
   })
 
   it('Step 2: tool.checkPermissions deny is respected', () => {
@@ -100,13 +100,13 @@ describe('checkToolPermission', () => {
     expect(result.behavior).toBe('allow')
   })
 
-  it('Step 5: non-readonly tool defaults to ask', () => {
+  it('Step 5: non-readonly tool defaults to allow (opt-in write confirmation)', () => {
     const result = checkToolPermission(
       makeTool({ isReadOnly: false }),
       {},
       createEmptyPermissionContext(),
     )
-    expect(result.behavior).toBe('ask')
+    expect(result.behavior).toBe('allow')
   })
 
   it('tool.checkPermissions ask with suggestions is passed through', () => {

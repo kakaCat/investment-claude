@@ -78,9 +78,6 @@ export function checkToolPermission(
     return toolResult
   }
 
-  // Default: readOnly tools auto-allow, else ask
-  if (tool.isReadOnly()) {
-    return { behavior: 'allow' }
-  }
-  return { behavior: 'ask', message: `确认使用 ${tool.name}？` }
+  // Default: auto-allow — write confirmation is opt-in via tool.checkPermissions
+  return { behavior: 'allow' }
 }
