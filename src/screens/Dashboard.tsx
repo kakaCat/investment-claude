@@ -140,7 +140,7 @@ export function Dashboard() {
 
   return (
     <Box flexDirection="column" height="100%">
-      <Box flexGrow={1} flexDirection="column">
+      <Box height={commandMode ? "93%" : "100%"} flexDirection="column">
         <Box height="50%">
           <Box width="50%" borderStyle="single" borderColor="gray">
             <PortfolioPanel data={portfolio} />
