@@ -10,8 +10,9 @@ import { clearSnipStore } from '../utils/snipStore.js'
 import { clearMessageIds } from '../utils/messageIds.js'
 import { executeHooks } from '../hooks/index.js'
 import { useMergedTools } from '../hooks/useMergedTools.js'
-import { getAllTools } from '../tools/index.js'
+import { getAllTools, findTool } from '../tools/index.js'
 import { getPluginTools } from '../plugins/index.js'
+import { getAppState, setAppState } from '../state/AppState.js'
 import { useAssistantHistory } from '../hooks/useAssistantHistory.js'
 import { Messages } from '../components/Messages.js'
 import { PromptInput } from '../components/PromptInput.js'
@@ -25,6 +26,9 @@ import { compactConversation, partialCompactConversation } from '../compact/inde
 import { runPostCompactCleanup } from '../compact/postCompactCleanup.js'
 import { initSessionMemory } from '../sessionMemory/index.js'
 import { initObservability } from '../observability/index.js'
+import { initPermissions, checkToolPermission, applyPermissionUpdate, persistPermissionUpdate } from '../permissions/index.js'
+import { PermissionPrompt, PERMISSION_OPTIONS, type PermissionPromptRequest } from '../components/PermissionPrompt.js'
+import type { PermissionUserChoice } from '../permissions/types.js'
 import { getWorkDir, getSessionId, getWorkspaceDir } from '../bootstrap/state.js'
 import { addToHistory } from '../history.js'
 import { logForDebugging } from '../utils/debug.js'
@@ -44,11 +48,7 @@ type Props = {
   swarmConfig?: SwarmConfig
 }
 
-type PermissionRequest = {
-  toolName: string
-  input: unknown
-  resolve: (decision: 'allow' | 'deny') => void
-}
+type PermissionRequest = PermissionPromptRequest
 
 type AskUserRequest = {
   question: string
@@ -105,6 +105,7 @@ export function REPL(_props: Props) {
   const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null)
   const [askUserRequest, setAskUserRequest] = useState<AskUserRequest | null>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [permSelectedIndex, setPermSelectedIndex] = useState(0)
   const [isPlanMode, setIsPlanMode] = useState(false)
   const [planApprovalRequest, setPlanApprovalRequest] = useState<PlanApprovalRequest | null>(null)
   const [collectingPlanReason, setCollectingPlanReason] = useState(false)
@@ -135,13 +136,62 @@ export function REPL(_props: Props) {
   // ── canUseTool 回调（传给 query()，在工具执行前弹出确认 UI）─────────────────
   // 对标 Claude Code canUseTool / wrappedCanUseTool
   const canUseTool = useCallback<CanUseTool>(
-    (name, _input) => {
+    async (name, input) => {
+      // Plan mode blocks writes (existing behavior preserved)
       if (isPlanModeRef.current && WRITE_TOOLS.has(name)) {
-        return Promise.resolve('deny')
+        return 'deny'
       }
-      return Promise.resolve('allow')
+
+      const appState = getAppState()
+      const tool = findTool(name, allTools)
+      if (!tool) return 'allow'
+
+      // Build content string for rule matching (Investment-specific)
+      let contentString: string | undefined
+      const inp = input as Record<string, unknown>
+      if (name === 'Investment' && inp.function && inp.action) {
+        contentString = `${inp.function}:${inp.action}`
+      }
+
+      const decision = checkToolPermission(
+        tool,
+        inp,
+        appState.permissionContext,
+        contentString,
+      )
+
+      if (decision.behavior === 'allow') return 'allow'
+      if (decision.behavior === 'deny') return 'deny'
+
+      // behavior === 'ask' → show permission prompt
+      const userChoice = await new Promise<PermissionUserChoice>((resolve) => {
+        setPermSelectedIndex(0)
+        setPermissionRequest({
+          toolName: name,
+          input,
+          decision,
+          resolve,
+        })
+      })
+
+      // Handle persistence
+      if (userChoice.persist && decision.suggestions?.length) {
+        const baseSuggestion = decision.suggestions[0]!
+        const update = {
+          ...baseSuggestion,
+          behavior: userChoice.action as 'allow' | 'deny',
+        }
+        persistPermissionUpdate(update)
+        setAppState(prev => ({
+          ...prev,
+          permissionContext: applyPermissionUpdate(prev.permissionContext, update),
+        }))
+      }
+
+      setPermissionRequest(null)
+      return userChoice.action
     },
-    [],
+    [allTools],
   )
 
   const askUser = useCallback<NonNullable<ToolUseContext['askUser']>>(
@@ -425,6 +475,7 @@ export function REPL(_props: Props) {
       smInitializedRef.current = true
       initSessionMemory()
       initObservability()
+      initPermissions()
     }
 
     // 加载 skill 列表，供命令面板显示
@@ -567,12 +618,21 @@ export function REPL(_props: Props) {
         return
       }
 
-      // 权限确认
+      // 权限确认 (4-option prompt)
       if (permissionRequest) {
-        if (input === 'y' || key.return) {
-          permissionRequest.resolve('allow')
-        } else if (input === 'n' || key.escape) {
-          permissionRequest.resolve('deny')
+        if (key.upArrow) {
+          setPermSelectedIndex(i => Math.max(0, i - 1))
+        } else if (key.downArrow) {
+          setPermSelectedIndex(i => Math.min(PERMISSION_OPTIONS.length - 1, i + 1))
+        } else if (key.return) {
+          const opt = PERMISSION_OPTIONS[permSelectedIndex]!
+          permissionRequest.resolve({
+            action: opt.action,
+            persist: opt.persist,
+            destination: opt.persist ? 'projectSettings' : undefined,
+          })
+        } else if (key.escape) {
+          permissionRequest.resolve({ action: 'deny', persist: false })
         }
         return
       }
@@ -583,14 +643,14 @@ export function REPL(_props: Props) {
         return
       }
 
-      // 上下箭头滚动历史（空闲时）
+      // Ctrl+↑ / Ctrl+↓ 滚动消息历史（避免与 PromptInput 的 ↑↓ 历史导航冲突）
       if (!isLoading && !permissionRequest && !askUserRequest && !planApprovalRequest && !verifyRequest) {
         const SCROLL_STEP = 3
-        if (key.upArrow) {
+        if (key.ctrl && key.upArrow) {
           setScrollOffset((o) => o + SCROLL_STEP)
           return
         }
-        if (key.downArrow) {
+        if (key.ctrl && key.downArrow) {
           setScrollOffset((o) => Math.max(0, o - SCROLL_STEP))
           return
         }
@@ -642,20 +702,10 @@ export function REPL(_props: Props) {
 
       {/* 工具权限确认 */}
       {permissionRequest && (
-        <Box flexDirection="column" borderStyle="round" borderColor="yellow" padding={1}>
-          <Text color="yellow" bold>
-            Allow tool use?
-          </Text>
-          <Text>
-            Tool: <Text color="cyan">{permissionRequest.toolName}</Text>
-          </Text>
-          <Text>
-            Input: <Text color="gray">{JSON.stringify(permissionRequest.input)}</Text>
-          </Text>
-          <Text>
-            <Text color="green">y</Text> to allow, <Text color="red">n</Text> to deny
-          </Text>
-        </Box>
+        <PermissionPrompt
+          request={permissionRequest}
+          selectedIndex={permSelectedIndex}
+        />
       )}
 
       {askUserRequest && (
