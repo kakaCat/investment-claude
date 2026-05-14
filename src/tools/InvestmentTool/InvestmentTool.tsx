@@ -2,7 +2,8 @@
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { callPython } from '../../utils/python-bridge.js'
 import { renderToolResultMessage } from './UI.js'
-import { INVESTMENT_TOOL_DESCRIPTION } from './prompt.js'
+import { INVESTMENT_TOOL_DESCRIPTION, ALL_KNOWN_FUNCTIONS } from './prompt.js'
+import type { PermissionDecision } from '../../permissions/types.js'
 
 // 输入输出类型定义
 
@@ -68,15 +69,13 @@ const investmentToolDef: ToolDef<InvestmentInput, InvestmentOutput> = {
       function: {
         type: 'string',
         description: 'Python function name to call (e.g., "get_stock_realtime_price")',
+        enum: ALL_KNOWN_FUNCTIONS,
       },
     },
     required: ['function'],
   },
 
-  async call(input, context) {
-    const { function: funcName, ...params } = input
-
-    // Write operations that require user confirmation
+  checkPermissions(input: InvestmentInput): PermissionDecision {
     const WRITE_OPS: Record<string, string[]> = {
       manage_portfolio: ['add', 'remove', 'update'],
       manage_watchlist: ['add', 'remove', 'update'],
@@ -84,21 +83,39 @@ const investmentToolDef: ToolDef<InvestmentInput, InvestmentOutput> = {
       manage_cash: ['update'],
     }
 
+    const { function: funcName, ...params } = input
     const writeActions = WRITE_OPS[funcName]
-    if (writeActions && writeActions.includes(params.action) && context.askUser) {
-      const desc = formatWriteConfirmation(funcName, params)
-      const answer = await context.askUser(desc, [
-        { label: '确认' },
-        { label: '取消' },
-      ])
-      if (answer !== '确认') {
-        return {
-          data: {
-            success: false,
-            error: '操作已取消',
-            function: funcName,
-          },
-        }
+    if (writeActions && writeActions.includes(params.action)) {
+      return {
+        behavior: 'ask',
+        message: formatWriteConfirmation(funcName, params),
+        suggestions: [{
+          type: 'addRules',
+          destination: 'projectSettings',
+          rules: [{ toolName: 'Investment', ruleContent: `${funcName}:${params.action}` }],
+          behavior: 'allow',
+        }],
+      }
+    }
+
+    return { behavior: 'allow' }
+  },
+
+  isReadOnly() {
+    return false
+  },
+
+  async call(input, _context) {
+    const { function: funcName, ...params } = input
+
+    // 验证函数名
+    if (!ALL_KNOWN_FUNCTIONS.includes(funcName)) {
+      return {
+        data: {
+          success: false,
+          error: `未知函数: ${funcName}. 可用函数: ${ALL_KNOWN_FUNCTIONS.slice(0, 10).join(', ')}...`,
+          function: funcName,
+        },
       }
     }
 
