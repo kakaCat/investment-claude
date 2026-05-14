@@ -60,6 +60,35 @@ describe('loadPermissionSettings', () => {
     expect(ctx.denyRules.userSettings).toEqual(['Investment(manage_portfolio:remove)'])
   })
 
+  it('loads rules from both user and project settings into correct source buckets', async () => {
+    readFileSyncMock.mockImplementation((path) => {
+      const p = String(path)
+      if (p === '/home/tester/.pi/settings.json') {
+        return JSON.stringify({
+          permissions: {
+            allow: ['Read'],
+            deny: ['Bash'],
+          },
+        })
+      }
+      if (p === '/project/.pi/settings.json') {
+        return JSON.stringify({
+          permissions: {
+            allow: ['Investment'],
+          },
+        })
+      }
+      throw new Error('ENOENT')
+    })
+
+    const { loadPermissionSettings } = await import('../settingsLoader.js')
+    const ctx = loadPermissionSettings()
+    expect(ctx.allowRules.userSettings).toEqual(['Read'])
+    expect(ctx.denyRules.userSettings).toEqual(['Bash'])
+    expect(ctx.allowRules.projectSettings).toEqual(['Investment'])
+    expect(ctx.denyRules.projectSettings).toEqual([])
+  })
+
   it('project settings override user defaultMode', async () => {
     readFileSyncMock.mockImplementation((path) => {
       const p = String(path)
@@ -178,6 +207,58 @@ describe('persistPermissionUpdate', () => {
       behavior: 'allow',
     })
     expect(writeFileSyncMock).not.toHaveBeenCalled()
+  })
+
+  it('removes a rule from settings file', async () => {
+    readFileSyncMock.mockReturnValue(JSON.stringify({
+      hooks: { PreToolUse: [] },
+      permissions: {
+        allow: ['Read', 'Bash'],
+      },
+    }))
+
+    const { persistPermissionUpdate } = await import('../settingsLoader.js')
+    persistPermissionUpdate({
+      type: 'removeRules',
+      destination: 'projectSettings',
+      rules: [{ toolName: 'Read' }],
+      behavior: 'allow',
+    })
+
+    const writtenContent = JSON.parse(writeFileSyncMock.mock.calls[0]![1] as string)
+    expect(writtenContent.permissions.allow).toEqual(['Bash'])
+    expect(writtenContent.permissions.allow).not.toContain('Read')
+    expect(writtenContent.hooks).toEqual({ PreToolUse: [] })
+  })
+
+  it('writes to user settings.json for userSettings destination', async () => {
+    readFileSyncMock.mockReturnValue(JSON.stringify({ hooks: {} }))
+
+    const { persistPermissionUpdate } = await import('../settingsLoader.js')
+    persistPermissionUpdate({
+      type: 'addRules',
+      destination: 'userSettings',
+      rules: [{ toolName: 'Read' }],
+      behavior: 'allow',
+    })
+
+    const writtenPath = writeFileSyncMock.mock.calls[0]![0]
+    expect(String(writtenPath)).toBe('/home/tester/.pi/settings.json')
+  })
+
+  it('creates directory when it does not exist', async () => {
+    existsSyncMock.mockReturnValue(false)
+    readFileSyncMock.mockReturnValue(JSON.stringify({ hooks: {} }))
+
+    const { persistPermissionUpdate } = await import('../settingsLoader.js')
+    persistPermissionUpdate({
+      type: 'addRules',
+      destination: 'projectSettings',
+      rules: [{ toolName: 'Read' }],
+      behavior: 'allow',
+    })
+
+    expect(mkdirSyncMock).toHaveBeenCalled()
   })
 
   it('writes to project settings.json for projectSettings destination', async () => {
