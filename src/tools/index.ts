@@ -33,7 +33,7 @@ import { ExitTool } from './ExitTool/ExitTool.js'
 import { WebFetchTool } from './WebFetchTool/WebFetchTool.js'
 import { SnipTool } from './SnipTool/SnipTool.js'
 import { BrowserTool } from './BrowserTool/BrowserTool.js'
-import { InvestmentTool } from './InvestmentTool/InvestmentTool.js'
+import { allInvestTools } from './InvestTools/InvestTools.js'
 import { QuantTool } from './QuantTool/QuantTool.js'
 import { SystemPromptTool } from './SystemPromptTool/SystemPromptTool.js'
 
@@ -42,7 +42,7 @@ const BUILTIN_TOOLS: Tool[] = [
   SnipTool,
   AgentTool,
   ExitTool,
-  InvestmentTool,
+  ...allInvestTools,
   QuantTool,
   SystemPromptTool,
   BashTool,

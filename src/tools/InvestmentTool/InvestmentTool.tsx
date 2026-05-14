@@ -151,10 +151,102 @@ const investmentToolDef: ToolDef<InvestmentInput, InvestmentOutput> = {
 
   mapToolResultToToolResultBlockParam(output, toolUseId) {
     if (!output.success) {
+      const error = output.error || 'Unknown error'
+      const funcName = output.function
+
+      // 分析错误类型
+      let errorType = 'UNKNOWN'
+      let diagnosis = ''
+      let suggestions: string[] = []
+
+      if (error.includes('ModuleNotFoundError') || error.includes('No module named')) {
+        errorType = 'MISSING_DEPENDENCY'
+        const moduleName = error.match(/No module named '([^']+)'/)?.[1] || 'unknown'
+        diagnosis = `Python module "${moduleName}" is not installed.`
+        suggestions = [
+          `Install the missing module: pip install ${moduleName}`,
+          'Check if the Python environment is properly set up',
+          'Verify requirements.txt includes all necessary dependencies',
+        ]
+      } else if (error.includes('FileNotFoundError') || error.includes('No such file')) {
+        errorType = 'FILE_NOT_FOUND'
+        diagnosis = 'A required file or data source is missing.'
+        suggestions = [
+          'Check if the data file exists at the expected location',
+          'Verify the file path is correct',
+          'The data may need to be initialized or downloaded first',
+        ]
+      } else if (error.includes('KeyError') || error.includes('key not found')) {
+        errorType = 'INVALID_PARAMETER'
+        diagnosis = 'A required parameter is missing or has an invalid key.'
+        suggestions = [
+          'Check the function signature and required parameters',
+          'Verify all required fields are provided',
+          'Review the tool description for correct parameter names',
+        ]
+      } else if (error.includes('ValueError') || error.includes('invalid literal')) {
+        errorType = 'INVALID_VALUE'
+        diagnosis = 'A parameter has an invalid value or format.'
+        suggestions = [
+          'Check parameter types (e.g., numbers should be numeric, not strings)',
+          'Verify date formats are correct',
+          'Ensure stock symbols are in the correct format',
+        ]
+      } else if (error.includes('ConnectionError') || error.includes('timeout') || error.includes('Network')) {
+        errorType = 'NETWORK_ERROR'
+        diagnosis = 'Failed to connect to external data source.'
+        suggestions = [
+          'The data provider may be temporarily unavailable',
+          'Check network connectivity',
+          'Try again in a few moments',
+          'Consider using alternative data sources',
+        ]
+      } else if (error.includes('symbol') && error.includes('not found')) {
+        errorType = 'SYMBOL_NOT_FOUND'
+        diagnosis = 'The stock symbol was not found or is invalid.'
+        suggestions = [
+          'Verify the stock symbol is correct (e.g., 600519 for 贵州茅台)',
+          'Check if the symbol format matches the market (A-share: 6-digit, HK: 5-digit with leading 0)',
+          'The stock may be delisted or suspended',
+        ]
+      } else if (error.includes('Traceback') || error.includes('line ')) {
+        errorType = 'PYTHON_RUNTIME_ERROR'
+        diagnosis = 'A Python runtime error occurred in the investment tool.'
+        suggestions = [
+          'This may be a bug in the Python script',
+          'Check the error traceback for details',
+          'Try with different parameters to isolate the issue',
+        ]
+      } else {
+        diagnosis = 'An unexpected error occurred in the investment tool.'
+        suggestions = [
+          'Check if the function name is correct',
+          'Verify all parameters are valid',
+          'Review the error message for specific details',
+        ]
+      }
+
+      const content = `Investment tool error (${funcName}):
+
+Error Type: ${errorType}
+Error: ${error}
+
+Diagnosis:
+${diagnosis}
+
+Suggested Actions:
+${suggestions.map(s => `- ${s}`).join('\n')}
+
+Important:
+- Inform the user that this investment function failed
+- Do NOT fabricate or assume the result data
+- Consider using alternative functions or data sources if available
+- If this is a data retrieval error, mark the data as "unavailable" in your analysis`
+
       return {
         type: 'tool_result',
         tool_use_id: toolUseId,
-        content: `Investment tool error (${output.function}):\n${output.error}`,
+        content,
         is_error: true,
       }
     }

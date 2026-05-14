@@ -5,7 +5,15 @@ import { TaskUpdateToolUseUI, TaskUpdateToolResultUI } from './UI.js'
 import { updateTaskFile } from '../../tasks/taskFileStore.js'
 import type { Task, TaskStatus } from '../../tasks/types.js'
 
-export const TaskUpdateTool = buildTool({
+type TaskUpdateResult = {
+  success: boolean
+  task?: Task
+  changes?: Partial<Omit<Task, 'id'>>
+  error?: string
+  taskId?: number
+}
+
+export const TaskUpdateTool = buildTool<unknown, TaskUpdateResult>({
   name: 'task_update',
   description: DESCRIPTION,
   searchHint: SEARCH_HINT,
@@ -40,17 +48,67 @@ export const TaskUpdateTool = buildTool({
 
     try {
       const updated = await updateTaskFile(id, updates, context)
-      if (!updated) return { data: `ERROR: Task ${id} not found.` }
-      return { data: JSON.stringify(updated) }
+      if (!updated) {
+        return {
+          data: {
+            success: false,
+            error: `Task ${id} not found.`,
+            taskId: id,
+          }
+        }
+      }
+      return {
+        data: {
+          success: true,
+          task: updated,
+          changes: updates,
+        }
+      }
     } catch (err) {
-      return { data: `ERROR: ${err instanceof Error ? err.message : String(err)}` }
+      return {
+        data: {
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+          taskId: id,
+        }
+      }
     }
   },
   mapToolResultToToolResultBlockParam(data, toolUseId) {
+    if (!data.success) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `<error>Failed to update task: ${data.error}</error>\n\nVerify the task ID exists and the update parameters are valid.`,
+        is_error: true,
+      }
+    }
+
+    const task = data.task!
+    const changes = data.changes!
+    const changeList = Object.entries(changes)
+      .map(([key, value]) => `  - ${key}: ${JSON.stringify(value)}`)
+      .join('\n')
+
+    let message = `Task #${task.id} updated successfully:\n${changeList}`
+
+    if (changes.status === 'completed') {
+      message += `\n\n✓ Task marked as completed. Consider checking for any tasks that were blocked by this one.`
+    } else if (changes.status === 'in_progress') {
+      message += `\n\n→ Task is now in progress.`
+    }
+
+    if (changes.owner) {
+      message += `\n\nTask ownership changed to: ${changes.owner}`
+    }
+
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: data,
+      content: message,
     }
+  },
+  renderToolResultMessage(data) {
+    return <TaskUpdateToolResultUI result={data} />
   },
 })

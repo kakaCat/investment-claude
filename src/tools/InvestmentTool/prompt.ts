@@ -244,28 +244,32 @@ Place orders, manage positions, track P&L with realistic commission and T+1 rule
   - Use case: Credit cycle analysis
 
 ### 💼 Portfolio Management (1 function)
-- **manage_portfolio** - Manage investment portfolio
+⭐ **DEFAULT for "我的持仓" / "my positions" queries**
+
+- **manage_portfolio** - Manage real investment portfolio (.pi/portfolio.json)
   - Params: {action: "get"|"get_with_pnl"|"add"|"remove"|"update", symbol?, name?, market?, quantity?, avg_cost?, notes?}
   - Actions:
     - get: View all holdings
-    - get_with_pnl: Get holdings with real-time prices and P&L calculation
+    - get_with_pnl: Get holdings with real-time prices and P&L calculation ⭐ USE THIS for position queries
     - add: Add new stock to portfolio
     - remove: Remove stock from portfolio
     - update: Update quantity, cost, or notes for existing holding
-  - Use case: Tracking investments and returns
+  - Use case: **DEFAULT tool for checking positions** - tracks real holdings
+  - ⚠️ When user asks "我的持仓" or "my positions", use manage_portfolio with action="get_with_pnl"
 
 ### 💰 Trading (Mock/Simulation) (7 functions)
 ⚠️ **All trading is simulated - no real money involved**
+⚠️ **Only use these when user explicitly mentions "模拟" / "mock" / "simulation"**
 
-- **get_account_info** - Get account information
+- **get_account_info** - Get mock account information
   - Params: {}
   - Returns: Cash, total assets, market value, position ratio
-  - Use case: Check available funds before trading
+  - Use case: Check available funds in simulation account
 
-- **get_positions** - Get current positions
+- **get_positions** - Get mock trading positions (NOT real portfolio)
   - Params: {}
-  - Returns: List of holdings with P&L, cost price, current price
-  - Use case: Review portfolio holdings and performance
+  - Returns: List of simulated holdings with P&L, cost price, current price
+  - Use case: Review mock trading portfolio (only use when user says "模拟持仓" / "mock positions")
 
 - **get_orders** - Get order history
   - Params: {status?: "pending"|"filled"|"cancelled"|"rejected"}
@@ -292,6 +296,26 @@ Place orders, manage positions, track P&L with realistic commission and T+1 rule
   - Params: {initial_cash?: 1000000.0}
   - Returns: Confirmation message
   - Use case: Start fresh simulation (clears all positions and orders)
+
+- **get_risk_alerts** - Get portfolio risk alerts
+  - Params: {stop_loss_pct?: -15.0, take_profit_pct?: 30.0}
+  - Returns: Stop-loss alerts (positions with loss below threshold) and take-profit alerts
+  - Use case: Automated risk monitoring, identify positions needing urgent action
+
+- **auto_decision_log** - Auto-record investment decision
+  - Params: {action: "buy"|"sell"|"hold"|"avoid", symbol: "600519", name: "贵州茅台", price: 1450.00, quantity: 100, rationale?: "决策理由"}
+  - Returns: Confirmation and log file path
+  - Use case: Record every decision to .pi/decision-log.md for later review
+
+- **verify_past_decisions** - Verify past decisions (close the feedback loop)
+  - Params: {days_ago?: 7}
+  - Returns: Lists decisions from N days ago with current price, P&L, verdict (正确/偏差)
+  - Use case: Weekly review — check if buy/avoid decisions were correct
+
+- **sync_portfolio_risk_alerts** - Risk alerts from real portfolio (not mock)
+  - Params: {stop_loss_pct?: -15.0, take_profit_pct?: 30.0}
+  - Returns: Stop-loss/take-profit alerts based on .pi/portfolio.json + real-time prices
+  - Use case: Monitors actual holdings, not simulation data
 
 ### 🇭🇰 HK Stocks (1 function)
 - **get_hk_analysis** - Comprehensive HK stock analysis
@@ -452,6 +476,9 @@ export const FUNCTION_CATEGORIES = {
   'Portfolio': [
     'manage_portfolio',
   ],
+  'Cash': [
+    'manage_cash',
+  ],
   'Watchlist': [
     'manage_watchlist',
   ],
@@ -461,9 +488,6 @@ export const FUNCTION_CATEGORIES = {
   'Daily Review': [
     'daily_review',
   ],
-  'Cash': [
-    'manage_cash',
-  ],
   'Trading': [
     'get_account_info',
     'get_positions',
@@ -472,8 +496,15 @@ export const FUNCTION_CATEGORIES = {
     'cancel_order',
     'update_t1_available',
     'reset_account',
+    'get_risk_alerts',
+    'sync_portfolio_risk_alerts',
+    'auto_decision_log',
+    'verify_past_decisions',
   ],
   'HK Stocks': [
     'get_hk_analysis',
   ],
 }
+
+/** 所有已知函数名的扁平列表 — 用于 inputSchema enum 校验 */
+export const ALL_KNOWN_FUNCTIONS: string[] = Object.values(FUNCTION_CATEGORIES).flat()

@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Permission Prompt TUI Design</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      font-family: 'Courier New', monospace;
+      padding: 20px;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: #4ec9b0;
+      margin-bottom: 30px;
+      text-align: center;
+    }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      margin-bottom: 40px;
+    }
+
+    .design-section {
+      background: #252526;
+      border: 2px solid #3e3e42;
+      border-radius: 8px;
+      padding: 20px;
+    }
+
+    .design-section h2 {
+      color: #569cd6;
+      margin-bottom: 20px;
+      font-size: 18px;
+    }
+
+    /* TUI 模拟器 */
+    .tui-window {
+      background: #0c0c0c;
+      border: 2px solid #3e3e42;
+      border-radius: 4px;
+      padding: 10px;
+      font-size: 14px;
+      min-height: 500px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 状态栏 */
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 10px;
+      border-bottom: 1px solid #3e3e42;
+      margin-bottom: 10px;
+    }
+
+    .status-bar .left {
+      color: #808080;
+    }
+
+    .status-bar .right {
+      color: #4ec9b0;
+      font-weight: bold;
+    }
+
+    /* 消息区域 */
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+
+    .message {
+      margin-bottom: 15px;
+    }
+
+    .user-message {
+      color: #569cd6;
+      font-weight: bold;
+    }
+
+    .user-message::before {
+      content: "❯ ";
+      color: #569cd6;
+    }
+
+    .assistant-message {
+      color: #d4d4d4;
+      padding-left: 10px;
+    }
+
+    .tool-call {
+      color: #808080;
+      padding-left: 10px;
+      font-style: italic;
+    }
+
+    /* 权限提示 - 当前版本 */
+    .permission-prompt-current {
+      border: 2px solid #d7ba7d;
+      border-radius: 8px;
+      padding: 15px;
+      margin: 10px 0;
+      background: rgba(215, 186, 125, 0.05);
+    }
+
+    .permission-prompt-current .title {
+      color: #d7ba7d;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
+    .permission-prompt-current .message {
+      margin-bottom: 15px;
+    }
+
+    .permission-prompt-current .option {
+      padding: 5px 10px;
+      margin: 3px 0;
+    }
+
+    .permission-prompt-current .option.selected {
+      color: #4ec9b0;
+      font-weight: bold;
+    }
+
+    .permission-prompt-current .option.selected::before {
+      content: "▸ ";
+    }
+
+    .permission-prompt-current .option:not(.selected) {
+      color: #808080;
+    }
+
+    .permission-prompt-current .option:not(.selected)::before {
+      content: "  ";
+    }
+
+    .permission-prompt-current .help {
+      color: #808080;
+      font-size: 12px;
+      margin-top: 10px;
+      text-align: center;
+    }
+
+    /* 权限提示 - 改进版本 */
+    .permission-prompt-improved {
+      border: 4px double #d7ba7d;
+      border-radius: 8px;
+      padding: 15px;
+      margin: 10px 20px;
+      background: rgba(215, 186, 125, 0.1);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    }
+
+    .permission-prompt-improved .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #3e3e42;
+    }
+
+    .permission-prompt-improved .title {
+      color: #d7ba7d;
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    .permission-prompt-improved .tool-name {
+      color: #808080;
+      font-size: 12px;
+    }
+
+    .permission-prompt-improved .message {
+      padding-left: 20px;
+      margin-bottom: 15px;
+      color: #d4d4d4;
+    }
+
+    .permission-prompt-improved .options {
+      margin: 15px 0;
+    }
+
+    .permission-prompt-improved .option {
+      display: flex;
+      padding: 8px 10px;
+      margin: 5px 0;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+
+    .permission-prompt-improved .option .label {
+      min-width: 150px;
+      font-weight: bold;
+    }
+
+    .permission-prompt-improved .option .description {
+      color: #808080;
+    }
+
+    .permission-prompt-improved .option.selected {
+      background: #4ec9b0;
+      color: #0c0c0c;
+    }
+
+    .permission-prompt-improved .option.selected .label {
+      color: #0c0c0c;
+    }
+
+    .permission-prompt-improved .option.selected .description {
+      color: #1e1e1e;
+    }
+
+    .permission-prompt-improved .option.selected::before {
+      content: "▸ ";
+      margin-right: 5px;
+    }
+
+    .permission-prompt-improved .option:not(.selected) {
+      color: #808080;
+    }
+
+    .permission-prompt-improved .option:not(.selected)::before {
+      content: "  ";
+      margin-right: 5px;
+    }
+
+    .permission-prompt-improved .rule-preview {
+      border: 1px solid #3e3e42;
+      border-radius: 4px;
+      padding: 10px;
+      margin: 15px 0;
+      background: rgba(62, 62, 66, 0.3);
+    }
+
+    .permission-prompt-improved .rule-preview .label {
+      color: #808080;
+      font-size: 12px;
+    }
+
+    .permission-prompt-improved .help {
+      color: #808080;
+      font-size: 12px;
+      margin-top: 15px;
+      text-align: center;
+      padding-top: 10px;
+      border-top: 1px solid #3e3e42;
+    }
+
+    /* 输入框 */
+    .prompt-input {
+      border: 2px solid #ff0000;
+      border-radius: 4px;
+      padding: 10px;
+      display: flex;
+      align-items: center;
+    }
+
+    .prompt-input .prompt {
+      color: #569cd6;
+      margin-right: 10px;
+    }
+
+    .prompt-input .input {
+      flex: 1;
+      color: #d4d4d4;
+    }
+
+    .prompt-input .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 16px;
+      background: #d4d4d4;
+      animation: blink 1s infinite;
+    }
+
+    @keyframes blink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+
+    /* 特性列表 */
+    .features {
+      margin-top: 30px;
+      padding: 20px;
+      background: #252526;
+      border: 2px solid #3e3e42;
+      border-radius: 8px;
+    }
+
+    .features h2 {
+      color: #4ec9b0;
+      margin-bottom: 15px;
+    }
+
+    .features ul {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .features li {
+      padding: 8px 0;
+      padding-left: 25px;
+      position: relative;
+    }
+
+    .features li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      color: #4ec9b0;
+      font-weight: bold;
+    }
+
+    .features .improvement {
+      color: #4ec9b0;
+    }
+
+    .features .issue {
+      color: #f48771;
+    }
+
+    /* 交互演示 */
+    .interactive-demo {
+      margin-top: 30px;
+    }
+
+    .demo-controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      justify-content: center;
+    }
+
+    .demo-controls button {
+      background: #0e639c;
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+
+    .demo-controls button:hover {
+      background: #1177bb;
+    }
+
+    .demo-controls button:active {
+      background: #0d5a8f;
+    }
+
+    /* 响应式 */
+    @media (max-width: 768px) {
+      .comparison {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔒 Permission Prompt TUI Design Comparison</h1>
+
+    <div class="comparison">
+      <!-- 当前设计 -->
+      <div class="design-section">
+        <h2>当前设计</h2>
+        <div class="tui-window">
+          <div class="status-bar">
+            <div class="left">messages: 5</div>
+            <div class="right">◐ streaming</div>
+          </div>
+
+          <div class="messages">
+            <div class="message user-message">
+              查询用户投资记录
+            </div>
+            <div class="message assistant-message">
+              好的，我来查询用户的投资记录。
+            </div>
+            <div class="message tool-call">
+              ● Investment 正在执行...
+            </div>
+          </div>
+
+          <div class="permission-prompt-current">
+            <div class="title">🔒 Investment 需要权限</div>
+            <div class="message">
+              Investment 工具需要执行：查询用户投资数据
+            </div>
+            <div class="option selected">✅ 允许 — 允许本次操作</div>
+            <div class="option">✅ 始终允许 — 将此操作加入允许规则</div>
+            <div class="option">❌ 拒绝 — 拒绝本次操作</div>
+            <div class="option">❌ 始终拒绝 — 将此操作加入拒绝规则</div>
+            <div class="help">↑↓ 选择  Enter 确认</div>
+          </div>
+
+          <div class="prompt-input">
+            <span class="prompt">❯</span>
+            <span class="input"></span>
+            <span class="cursor"></span>
+          </div>
+        </div>
+
+        <div class="features">
+          <h3>当前问题：</h3>
+          <ul>
+            <li class="issue">边框不够醒目（单线边框）</li>
+            <li class="issue">选中项不够明显（只有颜色变化）</li>
+            <li class="issue">没有左右边距，贴边显示</li>
+            <li class="issue">标题和工具名混在一起</li>
+            <li class="issue">规则预览不够突出</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- 改进设计 -->
+      <div class="design-section">
+        <h2>改进设计</h2>
+        <div class="tui-window">
+          <div class="status-bar">
+            <div class="left">messages: 5</div>
+            <div class="right">◐ streaming</div>
+          </div>
+
+          <div class="messages">
+            <div class="message user-message">
+              查询用户投资记录
+            </div>
+            <div class="message assistant-message">
+              好的，我来查询用户的投资记录。
+            </div>
+            <div class="message tool-call">
+              ● Investment 正在执行...
+            </div>
+          </div>
+
+          <div class="permission-prompt-improved">
+            <div class="header">
+              <div class="title">🔒 权限请求</div>
+              <div class="tool-name">Investment</div>
+            </div>
+            <div class="message">
+              Investment 工具需要执行：查询用户投资数据
+            </div>
+            <div class="options">
+              <div class="option selected">
+                <span class="label">✅ 允许</span>
+                <span class="description">— 允许本次操作</span>
+              </div>
+              <div class="option">
+                <span class="label">✅ 始终允许</span>
+                <span class="description">— 将此操作加入允许规则</span>
+              </div>
+              <div class="option">
+                <span class="label">❌ 拒绝</span>
+                <span class="description">— 拒绝本次操作</span>
+              </div>
+              <div class="option">
+                <span class="label">❌ 始终拒绝</span>
+                <span class="description">— 将此操作加入拒绝规则</span>
+              </div>
+            </div>
+            <div class="rule-preview">
+              <div class="label">规则预览: Investment:query</div>
+            </div>
+            <div class="help">↑↓ 选择  Enter 确认  Esc 取消</div>
+          </div>
+
+          <div class="prompt-input">
+            <span class="prompt">❯</span>
+            <span class="input"></span>
+            <span class="cursor"></span>
+          </div>
+        </div>
+
+        <div class="features">
+          <h3>改进点：</h3>
+          <ul>
+            <li class="improvement">双线边框 + 阴影，更醒目</li>
+            <li class="improvement">选中项反色高亮，一目了然</li>
+            <li class="improvement">左右边距 20px，不贴边</li>
+            <li class="improvement">标题和工具名分离，层次清晰</li>
+            <li class="improvement">规则预览独立区域，更突出</li>
+            <li class="improvement">分隔线增强视觉层次</li>
+            <li class="improvement">选项使用表格布局，对齐整齐</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 交互演示 -->
+    <div class="interactive-demo">
+      <h2 style="color: #4ec9b0; text-align: center; margin-bottom: 20px;">交互演示</h2>
+      <div class="demo-controls">
+        <button onclick="changeSelection(0)">选项 1</button>
+        <button onclick="changeSelection(1)">选项 2</button>
+        <button onclick="changeSelection(2)">选项 3</button>
+        <button onclick="changeSelection(3)">选项 4</button>
+      </div>
+
+      <div class="design-section">
+        <div class="tui-window">
+          <div class="status-bar">
+            <div class="left">messages: 5</div>
+            <div class="right">◐ streaming</div>
+          </div>
+
+          <div class="messages">
+            <div class="message user-message">
+              查询用户投资记录
+            </div>
+            <div class="message assistant-message">
+              好的，我来查询用户的投资记录。
+            </div>
+          </div>
+
+          <div class="permission-prompt-improved" id="interactive-prompt">
+            <div class="header">
+              <div class="title">🔒 权限请求</div>
+              <div class="tool-name">Investment</div>
+            </div>
+            <div class="message">
+              Investment 工具需要执行：查询用户投资数据
+            </div>
+            <div class="options">
+              <div class="option selected" data-index="0">
+                <span class="label">✅ 允许</span>
+                <span class="description">— 允许本次操作</span>
+              </div>
+              <div class="option" data-index="1">
+                <span class="label">✅ 始终允许</span>
+                <span class="description">— 将此操作加入允许规则</span>
+              </div>
+              <div class="option" data-index="2">
+                <span class="label">❌ 拒绝</span>
+                <span class="description">— 拒绝本次操作</span>
+              </div>
+              <div class="option" data-index="3">
+                <span class="label">❌ 始终拒绝</span>
+                <span class="description">— 将此操作加入拒绝规则</span>
+              </div>
+            </div>
+            <div class="rule-preview">
+              <div class="label">规则预览: Investment:query</div>
+            </div>
+            <div class="help">↑↓ 选择  Enter 确认  Esc 取消</div>
+          </div>
+
+          <div class="prompt-input">
+            <span class="prompt">❯</span>
+            <span class="input"></span>
+            <span class="cursor"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 实现建议 -->
+    <div class="features" style="margin-top: 30px;">
+      <h2>实现建议</h2>
+      <ul>
+        <li class="improvement">使用 <code>borderStyle="double"</code> 替代 <code>"round"</code></li>
+        <li class="improvement">添加 <code>marginX={2}</code> 增加左右边距</li>
+        <li class="improvement">使用 <code>inverse={true}</code> 实现选中项反色</li>
+        <li class="improvement">添加 header 区域分离标题和工具名</li>
+        <li class="improvement">规则预览使用独立的 Box 包裹</li>
+        <li class="improvement">选项使用固定宽度实现对齐</li>
+        <li class="improvement">添加分隔线增强视觉层次</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    function changeSelection(index) {
+      const prompt = document.getElementById('interactive-prompt');
+      const options = prompt.querySelectorAll('.option');
+
+      options.forEach((opt, i) => {
+        if (i === index) {
+          opt.classList.add('selected');
+        } else {
+          opt.classList.remove('selected');
+        }
+      });
+    }
+
+    // 键盘导航
+    let currentSelection = 0;
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        currentSelection = Math.max(0, currentSelection - 1);
+        changeSelection(currentSelection);
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        currentSelection = Math.min(3, currentSelection + 1);
+        changeSelection(currentSelection);
+      }
+    });
+  </script>
+</body>
+</html>

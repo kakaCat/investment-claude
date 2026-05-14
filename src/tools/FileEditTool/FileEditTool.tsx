@@ -3,9 +3,20 @@ import { readFile, writeFile } from 'fs/promises'
 import { resolve } from 'path'
 import { buildTool } from '../../Tool.js'
 import { DESCRIPTION, SEARCH_HINT } from './prompt.js'
-import { FileEditToolUseUI, FileEditToolResultUI } from './UI.js'
+import { FileEditToolUseUI, FileEditToolResultUI, FileEditToolResultMessageUI } from './UI.js'
 
-export const FileEditTool = buildTool({
+type FileEditResult = {
+  success: boolean
+  path: string
+  oldLength: number
+  newLength: number
+  error?: string
+}
+
+export const FileEditTool = buildTool<
+  { path: string; old_string: string; new_string: string },
+  FileEditResult
+>({
   name: 'edit_file',
   description: DESCRIPTION,
   searchHint: SEARCH_HINT,
@@ -25,6 +36,7 @@ export const FileEditTool = buildTool({
     />
   ),
   renderToolResult: (result) => <FileEditToolResultUI result={result} />,
+  renderToolResultMessage: (output) => <FileEditToolResultMessageUI output={output} />,
   async call(input, context) {
     const { path, old_string, new_string } = input as {
       path: string
@@ -39,25 +51,37 @@ export const FileEditTool = buildTool({
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       return {
-
-        data: `Error reading file: ${msg}`
-
+        data: {
+          success: false,
+          path,
+          oldLength: 0,
+          newLength: 0,
+          error: `Error reading file: ${msg}`,
+        },
       }
     }
 
     const count = content.split(old_string).length - 1
     if (count === 0) {
       return {
-
-        data: `Error: old_string not found in ${path}`
-
+        data: {
+          success: false,
+          path,
+          oldLength: 0,
+          newLength: 0,
+          error: `old_string not found in ${path}`,
+        },
       }
     }
     if (count > 1) {
       return {
-
-        data: `Error: old_string appears ${count} times in ${path} — must be unique`
-
+        data: {
+          success: false,
+          path,
+          oldLength: 0,
+          newLength: 0,
+          error: `old_string appears ${count} times in ${path} — must be unique`,
+        },
       }
     }
 
@@ -67,25 +91,51 @@ export const FileEditTool = buildTool({
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       return {
-
-        data: `Error writing file: ${msg}`
-
+        data: {
+          success: false,
+          path,
+          oldLength: old_string.length,
+          newLength: new_string.length,
+          error: `Error writing file: ${msg}`,
+        },
       }
     }
 
     return {
-
-
-      data: `Edited ${path}: replaced ${old_string.length} chars with ${new_string.length} chars`
-
-
+      data: {
+        success: true,
+        path,
+        oldLength: old_string.length,
+        newLength: new_string.length,
+      },
     }
   },
   mapToolResultToToolResultBlockParam(data, toolUseId) {
+    if (!data.success) {
+      const errorMsg = data.error || 'Unknown error'
+
+      // Add helpful guidance for common errors
+      let guidance = ''
+      if (errorMsg.includes('must be unique')) {
+        guidance = '\n\nTip: The old_string you provided matches multiple locations in the file. To fix this, provide more surrounding context in old_string to make it unique, or use a more specific string that only appears once.'
+      } else if (errorMsg.includes('not found')) {
+        guidance = '\n\nTip: The old_string was not found in the file. Make sure you copied the exact text including whitespace and indentation. Use the Read tool to verify the current file contents.'
+      } else if (errorMsg.includes('permission') || errorMsg.includes('EACCES')) {
+        guidance = '\n\nTip: Permission denied. Check if the file is writable or if you need elevated permissions.'
+      }
+
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `<error>${errorMsg}</error>${guidance}`,
+        is_error: true,
+      }
+    }
+
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: data,
+      content: `The file ${data.path} has been edited successfully. Replaced ${data.oldLength} characters with ${data.newLength} characters.`,
     }
   },
 })

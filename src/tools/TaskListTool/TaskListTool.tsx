@@ -1,10 +1,22 @@
 import React from 'react'
 import { buildTool } from '../../Tool.js'
 import { DESCRIPTION, SEARCH_HINT } from './prompt.js'
-import { TaskListToolUseUI, TaskListToolResultUI } from './UI.js'
-import type { TaskStatus } from '../../tasks/types.js'
+import { TaskListToolUseUI, TaskListToolResultUI, TaskListToolResultMessageUI } from './UI.js'
+import type { TaskStatus, Task } from '../../tasks/types.js'
 
-export const TaskListTool = buildTool({
+type TaskListResult = {
+  tasks: Task[]
+  totalTasks: number
+  filters: {
+    status?: TaskStatus
+    owner?: string
+  }
+}
+
+export const TaskListTool = buildTool<
+  { status?: TaskStatus; owner?: string },
+  TaskListResult
+>({
   name: 'task_list',
   description: DESCRIPTION,
   searchHint: SEARCH_HINT,
@@ -18,22 +30,25 @@ export const TaskListTool = buildTool({
   isReadOnly: () => true,
   renderToolUse: (input) => <TaskListToolUseUI input={input as { status?: string; owner?: string }} />,
   renderToolResult: (result) => <TaskListToolResultUI result={result} />,
+  renderToolResultMessage: (output) => <TaskListToolResultMessageUI output={output} />,
   async call(input, context) {
     const { status, owner } = input as { status?: TaskStatus; owner?: string }
     let tasks = Array.from(context.getAppState().tasks.values())
     if (status) tasks = tasks.filter((t) => t.status === status)
     if (owner) tasks = tasks.filter((t) => t.owner === owner)
     return {
-
-      data: JSON.stringify(tasks)
-
+      data: {
+        tasks,
+        totalTasks: tasks.length,
+        filters: { status, owner },
+      },
     }
   },
   mapToolResultToToolResultBlockParam(data, toolUseId) {
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: data,
+      content: JSON.stringify(data.tasks),
     }
   },
 })

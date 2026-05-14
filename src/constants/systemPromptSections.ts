@@ -17,8 +17,16 @@ type SectionEntry = {
   cached?: string | null // undefined = 未加载; null = 加载结果为空
 }
 
+// 边界标记 — 用于分隔静态和动态内容，支持 Anthropic API prompt caching
+export const SYSTEM_PROMPT_DYNAMIC_BOUNDARY = '=== DYNAMIC CONTENT BOUNDARY ==='
+
 // 按注册顺序排列，决定最终拼接顺序
 const registry: SectionEntry[] = []
+
+// 检查是否启用全局缓存作用域（通过环境变量控制）
+export function shouldUseGlobalCacheScope(): boolean {
+  return process.env.USE_GLOBAL_CACHE_SCOPE === 'true'
+}
 
 export function registerSection(id: string, loader: SectionLoader): void {
   registry.push({ id, loader, volatile: false })
@@ -46,9 +54,30 @@ export async function resolveSystemPrompt(ctx: SectionContext): Promise<string> 
     }),
   )
 
-  return results
-    .filter((r): r is string => typeof r === 'string' && r.trim().length > 0)
-    .join('\n\n---\n\n')
+  const sections = results.filter(
+    (r): r is string => typeof r === 'string' && r.trim().length > 0,
+  )
+
+  // 如果启用全局缓存作用域，在静态和动态段之间插入边界标记
+  if (shouldUseGlobalCacheScope()) {
+    // 找到第一个 volatile 段的位置
+    const firstVolatileIndex = registry.findIndex((entry) => entry.volatile)
+
+    if (firstVolatileIndex > 0) {
+      // 计算实际输出中的插入位置（考虑到可能有 null 结果被过滤）
+      let outputIndex = 0
+      for (let i = 0; i < firstVolatileIndex; i++) {
+        if (results[i] !== null && results[i] !== undefined && (results[i] as string).trim().length > 0) {
+          outputIndex++
+        }
+      }
+
+      // 在静态和动态段之间插入边界标记
+      sections.splice(outputIndex, 0, SYSTEM_PROMPT_DYNAMIC_BOUNDARY)
+    }
+  }
+
+  return sections.join('\n\n---\n\n')
 }
 
 export function clearSectionCache(): void {

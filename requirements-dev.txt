@@ -1,0 +1,11 @@
+# Development Dependencies
+
+# Code Quality Tools
+black>=24.1.1
+pylint>=3.0.3
+mypy>=1.8.0
+pre-commit>=3.6.0
+isort>=5.13.2
+
+# Type Stubs
+types-requests>=2.31.0

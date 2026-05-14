@@ -5,6 +5,14 @@ import { DESCRIPTION, SEARCH_HINT } from './prompt.js'
 import { TodoWriteToolUseUI, TodoWriteToolResultUI } from './UI.js'
 import type { TodoItem, TodoStatus } from '../../tasks/types.js'
 
+type TodoWriteResult = {
+  todos: TodoItem[]
+  added: TodoItem[]
+  completed: TodoItem[]
+  updated: TodoItem[]
+  total: number
+}
+
 export const TodoWriteTool = buildTool({
   name: 'todo_write',
   description: DESCRIPTION,
@@ -34,26 +42,75 @@ export const TodoWriteTool = buildTool({
     const todos = [...getAppState().todos]
     return <TodoWriteToolResultUI todos={todos} />
   },
+  renderToolResultMessage: (output: TodoWriteResult) => (
+    <TodoWriteToolResultUI
+      todos={output.todos}
+      added={output.added}
+      completed={output.completed}
+      updated={output.updated}
+      total={output.total}
+    />
+  ),
   async call(input, context) {
     const { todos } = input as { todos: TodoItem[] }
     const validStatuses: TodoStatus[] = ['pending', 'in_progress', 'completed']
     for (const item of todos) {
       if (!item.content || !item.activeForm || !validStatuses.includes(item.status)) {
-        return { data: `ERROR: Invalid todo item: ${JSON.stringify(item)}. Each item must have content, activeForm, and status (pending|in_progress|completed).` }
+        return {
+          data: {
+            todos: [],
+            added: [],
+            completed: [],
+            updated: [],
+            total: 0,
+          },
+        }
       }
     }
     const inProgressCount = todos.filter((t) => t.status === 'in_progress').length
     if (inProgressCount > 1) {
       console.warn(`[TodoWriteTool] Warning: ${inProgressCount} items are in_progress (recommended: at most 1)`)
     }
+
+    // 计算变更
+    const oldTodos = context.getAppState().todos
+    const oldMap = new Map(oldTodos.map((t) => [t.content, t]))
+    const newMap = new Map(todos.map((t) => [t.content, t]))
+
+    const added: TodoItem[] = []
+    const completed: TodoItem[] = []
+    const updated: TodoItem[] = []
+
+    for (const todo of todos) {
+      const old = oldMap.get(todo.content)
+      if (!old) {
+        added.push(todo)
+      } else if (old.status !== todo.status) {
+        if (todo.status === 'completed' && old.status !== 'completed') {
+          completed.push(todo)
+        } else {
+          updated.push(todo)
+        }
+      }
+    }
+
     context.setAppState((prev) => ({ ...prev, todos }))
-    return { data: `Todo list updated. ${todos.length} items.` }
+
+    return {
+      data: {
+        todos,
+        added,
+        completed,
+        updated,
+        total: todos.length,
+      },
+    }
   },
-  mapToolResultToToolResultBlockParam(data, toolUseId) {
+  mapToolResultToToolResultBlockParam(data: TodoWriteResult, toolUseId) {
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: data,
+      content: `Todo list updated. ${data.total} items.`,
     }
   },
 })

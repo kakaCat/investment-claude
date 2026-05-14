@@ -39,7 +39,51 @@ export function TodoListUI({ todos }: { todos: TodoItem[] }) {
   )
 }
 
-export function TodoWriteToolResultUI({ todos }: { todos: TodoItem[] }) {
+export function TodoWriteToolResultUI({
+  todos,
+  added,
+  completed,
+  updated,
+  total,
+}: {
+  todos: TodoItem[]
+  added?: TodoItem[]
+  completed?: TodoItem[]
+  updated?: TodoItem[]
+  total?: number
+}) {
+  // 如果传入了结构化数据，显示变更摘要
+  if (added !== undefined || completed !== undefined || updated !== undefined) {
+    if (todos.length === 0) {
+      return (
+        <Box paddingX={1}>
+          <Text color="gray">Todo list cleared.</Text>
+        </Box>
+      )
+    }
+
+    return (
+      <Box flexDirection="column" paddingX={1}>
+        {added && added.length > 0 && (
+          <Text color="green">➕ Added {added.length} task{added.length > 1 ? 's' : ''}</Text>
+        )}
+        {completed && completed.length > 0 && (
+          <Text color="green">✅ Completed {completed.length} task{completed.length > 1 ? 's' : ''}</Text>
+        )}
+        {updated && updated.length > 0 && (
+          <Text color="yellow">📝 Updated {updated.length} task{updated.length > 1 ? 's' : ''}</Text>
+        )}
+        <Text color="cyan" dimColor>
+          Total: {total} task{total !== 1 ? 's' : ''}
+        </Text>
+        <Box marginTop={1}>
+          <TodoListUI todos={todos} />
+        </Box>
+      </Box>
+    )
+  }
+
+  // Fallback: 使用旧的渲染
   if (todos.length === 0) {
     return (
       <Box paddingX={1}>

@@ -32,10 +32,27 @@ export const SendUserFileTool = buildTool({
     return { data: absPath }
   },
   mapToolResultToToolResultBlockParam(data, toolUseId) {
+    if (data.startsWith('Error:')) {
+      let errorMsg = `<error>${data}</error>\n\n`
+
+      if (data.includes('file not found')) {
+        errorMsg += `The file does not exist at the specified path. Verify the path is correct and the file exists.`
+      } else if (data.includes('cannot access file')) {
+        errorMsg += `The file exists but cannot be accessed. This may be due to:\n- Insufficient permissions\n- File is locked by another process\n- File system error`
+      }
+
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: errorMsg,
+        is_error: true,
+      }
+    }
+
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: data,
+      content: `File sent to user: ${data}\n\nThe user can now download or view this file.`,
     }
   },
 })

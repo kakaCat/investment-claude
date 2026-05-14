@@ -11,10 +11,18 @@ export function hasUltrathinkKeyword(text: string): boolean {
 /**
  * 判断模型是否支持 thinking 参数。
  * - Claude 3.7+ 和 Claude 4 系列支持
- * - Claude 3.5 及以下、非 Claude 模型不支持（o1/R1 等推理模型自带推理，无需额外参数）
+ * - DeepSeek v3/v4/reasoner 系列支持
+ * - Claude 3.5 及以下不支持
  */
 export function modelSupportsThinking(model: string): boolean {
   const m = model.toLowerCase()
+
+  // DeepSeek 支持 thinking（v3/v4/reasoner）
+  if (m.includes('deepseek')) {
+    return m.includes('v3') || m.includes('v4') || m.includes('reasoner')
+  }
+
+  // Claude 支持检测
   if (!m.includes('claude')) return false
   // 排除 claude-3.5、claude-3-haiku/sonnet/opus（不支持 thinking 参数）
   if (

@@ -24,3 +24,34 @@ export function FileEditToolResultUI({ result }: { result: string }) {
     </Box>
   )
 }
+
+type FileEditResult = {
+  success: boolean
+  path: string
+  oldLength: number
+  newLength: number
+  error?: string
+}
+
+export function FileEditToolResultMessageUI({ output }: { output: FileEditResult }) {
+  if (!output.success) {
+    return (
+      <Box flexDirection="column">
+        <Text color="red">✗ Edit failed</Text>
+        <Text color="red">{output.error}</Text>
+      </Box>
+    )
+  }
+
+  const delta = output.newLength - output.oldLength
+  const deltaText = delta > 0 ? `+${delta}` : delta < 0 ? `${delta}` : '±0'
+
+  return (
+    <Box flexDirection="column">
+      <Text color="green">✓ Edited {output.path}</Text>
+      <Text color="gray">
+        Replaced {output.oldLength} chars with {output.newLength} chars ({deltaText})
+      </Text>
+    </Box>
+  )
+}

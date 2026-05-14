@@ -85,10 +85,44 @@ export const ToolSearchTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam(data, toolUseId) {
+    if (data.startsWith('ERROR:')) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `<error>${data}</error>\n\nProvide a tool name after 'select:' (e.g., "select:bash").`,
+        is_error: true,
+      }
+    }
+
+    if (data.includes('No tool named')) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `${data}\n\nThe tool does not exist or is not enabled. Try a keyword search instead.`,
+      }
+    }
+
+    if (data.includes('No tools matched')) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `${data}\n\nTry different keywords or use 'select:toolname' for exact tool lookup.`,
+      }
+    }
+
+    if (data.includes('Tool activated:')) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `${data}\n\nYou can now use this tool in your workflow.`,
+      }
+    }
+
+    const toolCount = data.split('\n').length
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: data,
+      content: `${data}\n\nFound ${toolCount} matching tool${toolCount > 1 ? 's' : ''}. Use 'select:toolname' to activate a specific tool.`,
     }
   },
 })

@@ -30,6 +30,12 @@ export type UserMessage = {
   uuid?: string
   /** Meta messages (system injections) are not tagged with [id:xxx] */
   isMeta?: true
+  /**
+   * 保存工具的原始输出（结构化数据），用于 UI 渲染
+   * Map<tool_use_id, Output>
+   * 对标 Claude Code 的 toolUseResult 字段
+   */
+  toolUseResults?: Record<string, unknown>
 }
 
 export type ThinkingContent = {

@@ -39,7 +39,7 @@ export const ExitTool = buildTool({
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: data,
+      content: `${data}\n\nThe session will terminate after this message. Any unsaved work should be committed before exiting.`,
     }
   },
 })

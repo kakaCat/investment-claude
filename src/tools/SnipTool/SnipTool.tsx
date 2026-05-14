@@ -47,10 +47,26 @@ export const SnipTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam(data, toolUseId) {
+    if (data.includes('Unknown IDs')) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `${data}\n\nSome message IDs could not be resolved. Verify the IDs are correct by checking the [id:xxx] tags in the conversation.`,
+      }
+    }
+
+    if (data === 'No messages snipped') {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: 'No messages were snipped. Provide valid message IDs to remove from context.',
+      }
+    }
+
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: data,
+      content: `${data}\n\nThe specified messages have been removed from the conversation context and will no longer consume tokens.`,
     }
   },
 })

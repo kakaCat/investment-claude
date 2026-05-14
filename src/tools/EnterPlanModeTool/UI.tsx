@@ -9,10 +9,30 @@ export function EnterPlanModeToolUseUI(_: { input: Record<string, never> }) {
   )
 }
 
-export function EnterPlanModeToolResultUI({ result }: { result: string }) {
+type EnterPlanModeResult = {
+  success: boolean
+  message: string
+}
+
+export function EnterPlanModeToolResultUI({ result }: { result: string | EnterPlanModeResult }) {
+  // Backward compatibility: handle string result
+  if (typeof result === 'string') {
+    return (
+      <Box>
+        <Text color="blue">{result}</Text>
+      </Box>
+    )
+  }
+
+  // New structured result
   return (
-    <Box>
-      <Text color="blue">{result}</Text>
+    <Box flexDirection="column">
+      <Box>
+        <Text color={result.success ? 'green' : 'red'} bold>
+          {result.success ? '✓' : '✗'}
+        </Text>
+        <Text color={result.success ? 'blue' : 'red'}> {result.message}</Text>
+      </Box>
     </Box>
   )
 }

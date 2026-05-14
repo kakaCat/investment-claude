@@ -9,12 +9,14 @@ import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
 import { EXPLORE_AGENT } from './built-in/exploreAgent.js'
 import { PLAN_AGENT } from './built-in/planAgent.js'
 import { EVALUATE_AGENT } from './built-in/evaluateAgent.js'
+import { BROWSER_AGENT } from './built-in/browserAgent.js'
 
 const BUILT_IN_AGENTS: AgentDefinition[] = [
   GENERAL_PURPOSE_AGENT,
   EXPLORE_AGENT,
   PLAN_AGENT,
   EVALUATE_AGENT,
+  BROWSER_AGENT,
 ]
 
 /**

@@ -140,7 +140,7 @@ export function Dashboard() {
 
   return (
     <Box flexDirection="column" height="100%">
-      <Box height={commandMode ? "93%" : "100%"} flexDirection="column">
+      <Box flexGrow={1} flexShrink={1} flexDirection="column">
         <Box height="50%">
           <Box width="50%" borderStyle="single" borderColor="gray">
             <PortfolioPanel data={portfolio} />
@@ -160,11 +160,13 @@ export function Dashboard() {
       </Box>
 
       {commandMode && (
-        <CommandInput
-          onSubmit={handleCommand}
-          onCancel={() => setCommandMode(false)}
-          isActive={commandMode}
-        />
+        <Box flexShrink={0} height={3}>
+          <CommandInput
+            onSubmit={handleCommand}
+            onCancel={() => setCommandMode(false)}
+            isActive={commandMode}
+          />
+        </Box>
       )}
 
       {modalContent && <ResultModal content={modalContent} onClose={() => setModalContent(null)} />}

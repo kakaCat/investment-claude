@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, memo } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { getHistory } from '../history.js'
 import type { HistoryEntry } from '../history.js'
@@ -6,10 +6,20 @@ import type { Skill } from '../skills/index.js'
 import { useHistorySearch } from '../hooks/useHistorySearch.js'
 import { useTypeahead } from '../hooks/useTypeahead.js'
 import { PromptInputSuggestions } from './PromptInputSuggestions.js'
+import {
+  moveCursorLeft,
+  moveCursorRight,
+  moveCursorHome,
+  moveCursorEnd,
+  insertAtCursor,
+  deleteBeforeCursor,
+  deleteAtCursor,
+} from './cursorInput.js'
 
 type Props = {
   onSubmit: (input: string) => void
   isLoading: boolean
+  disabled?: boolean
   onExit?: () => Promise<void>
   onCancel?: () => void
   skills?: Skill[]
@@ -81,18 +91,30 @@ export function formatHistorySearchStatus(
   return `${historyFailedMatch ? '(failed reverse-i-search)' : '(reverse-i-search)'}'${historyQuery}': ${historyMatch?.display ?? ''}`
 }
 
-export function PromptInput({ onSubmit, isLoading, onExit, onCancel, skills = [] }: Props) {
+export const PromptInput = memo(function PromptInput({ onSubmit, isLoading, disabled = false, onExit, onCancel, skills = [] }: Props) {
   const [value, setValue] = useState('')
+  const [cursorPos, setCursorPos] = useState(0)
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [historyCache, setHistoryCache] = useState<string[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [savedInput, setSavedInput] = useState('')
 
   const valueRef = useRef(value)
+  const cursorPosRef = useRef(cursorPos)
 
   useEffect(() => {
     valueRef.current = value
   }, [value])
+
+  useEffect(() => {
+    cursorPosRef.current = cursorPos
+  }, [cursorPos])
+
+  // 同步设置 value 和 cursorPos 的辅助函数
+  const setValueAndCursor = useCallback((newValue: string, newCursor: number) => {
+    setValue(newValue)
+    setCursorPos(newCursor)
+  }, [])
 
   const resetHistoryNavigation = useCallback(() => {
     setHistoryIndex(-1)
@@ -102,6 +124,7 @@ export function PromptInput({ onSubmit, isLoading, onExit, onCancel, skills = []
 
   const handleInputChange = useCallback((input: string) => {
     setValue(input)
+    setCursorPos(input.length)
   }, [])
 
   const handleSubmitValue = useCallback(
@@ -113,6 +136,7 @@ export function PromptInput({ onSubmit, isLoading, onExit, onCancel, skills = []
 
       onSubmit(nextValue)
       setValue('')
+      setCursorPos(0)
       resetHistoryNavigation()
     },
     [onSubmit, resetHistoryNavigation],
@@ -165,6 +189,7 @@ export function PromptInput({ onSubmit, isLoading, onExit, onCancel, skills = []
 
     if (nextState.nextValue !== undefined) {
       setValue(nextState.nextValue)
+      setCursorPos(nextState.nextValue.length)
     }
   }, [historyCache, historyIndex, savedInput])
 
@@ -177,11 +202,13 @@ export function PromptInput({ onSubmit, isLoading, onExit, onCancel, skills = []
 
     if (nextState.nextValue !== undefined) {
       setValue(nextState.nextValue)
+      setCursorPos(nextState.nextValue.length)
     }
   }, [historyCache, historyIndex, savedInput])
 
   useInput((input, key) => {
-    if (isLoading) return
+    if (disabled || isLoading) return
+
     if (key.ctrl && input === 'c') {
       if (onExit) {
         void onExit()
@@ -195,6 +222,7 @@ export function PromptInput({ onSubmit, isLoading, onExit, onCancel, skills = []
     if (key.escape) {
       if (value.length > 0) {
         setValue('')
+        setCursorPos(0)
         resetHistoryNavigation()
       } else {
         onCancel?.()
@@ -215,6 +243,34 @@ export function PromptInput({ onSubmit, isLoading, onExit, onCancel, skills = []
       return
     }
 
+    // ← 左移光标
+    if (key.leftArrow) {
+      const next = moveCursorLeft({ value, cursorPos })
+      setCursorPos(next.cursorPos)
+      return
+    }
+
+    // → 右移光标
+    if (key.rightArrow) {
+      const next = moveCursorRight({ value, cursorPos })
+      setCursorPos(next.cursorPos)
+      return
+    }
+
+    // Ctrl+A → 行首
+    if (key.ctrl && input === 'a') {
+      const next = moveCursorHome({ value, cursorPos })
+      setCursorPos(next.cursorPos)
+      return
+    }
+
+    // Ctrl+E → 行尾
+    if (key.ctrl && input === 'e') {
+      const next = moveCursorEnd({ value, cursorPos })
+      setCursorPos(next.cursorPos)
+      return
+    }
+
     if (key.ctrl && input === 'r') {
       setSavedInput(valueRef.current)
       startSearch()
@@ -226,35 +282,75 @@ export function PromptInput({ onSubmit, isLoading, onExit, onCancel, skills = []
       return
     }
 
+    // Backspace / Delete：
+    // 大多数终端（macOS Terminal、iTerm2）按 Backspace 发送 \x7f，
+    // ink 将 \x7f 解析为 key.delete，将 \x08(Ctrl+H) 解析为 key.backspace。
+    // 因此两者都需要执行"删除光标前一个字符"的逻辑。
     if (key.backspace || key.delete) {
       setHistoryIndex(-1)
-      setValue((v) => v.slice(0, -1))
+      const next = deleteBeforeCursor({ value, cursorPos })
+      setValueAndCursor(next.value, next.cursorPos)
       return
     }
 
     if (!key.ctrl && !key.meta && input) {
       setHistoryIndex(-1)
-      setValue(v => v + input)
+      const next = insertAtCursor({ value, cursorPos }, input)
+      setValueAndCursor(next.value, next.cursorPos)
     }
   }, { isActive: !isSearching })
 
   return (
-    <Box flexDirection="column">
-      {isOpen && (
+    <Box flexDirection="column" gap={1}>
+      {isOpen && !disabled && (
         <PromptInputSuggestions
           items={suggestions.items}
           selectedIndex={suggestions.selectedIndex}
           argumentHint={suggestions.argumentHint}
         />
       )}
-      {isSearching && <Text>{formatHistorySearchStatus(historyQuery, historyMatch, historyFailedMatch)}</Text>}
-      <Box>
-        <Text color="green" bold>
-          {'> '}
+      {isSearching && !disabled && (
+        <Text>{formatHistorySearchStatus(historyQuery, historyMatch, historyFailedMatch)}</Text>
+      )}
+
+      {/* 输入行 — 对标 tui-redesign.html */}
+      <Box gap={1}>
+        <Text color={disabled || isLoading ? 'gray' : 'blue'} bold>
+          {'❯'}
         </Text>
-        <Text>{value}</Text>
-        {!isLoading && <Text color="gray">█</Text>}
+        {isLoading ? (
+          <Text color="gray" italic>
+            Pi is thinking…
+          </Text>
+        ) : (
+          <Box>
+            <Text dimColor={disabled}>{value.slice(0, cursorPos)}</Text>
+            <Text color={disabled ? 'gray' : 'cyan'}>▊</Text>
+            <Text dimColor={disabled}>{value.slice(cursorPos)}</Text>
+          </Box>
+        )}
+      </Box>
+
+      {/* 分隔线 */}
+      <Box>
+        <Text color="gray" dimColor>{'─'.repeat(80)}</Text>
+      </Box>
+
+      {/* 快捷键提示行 — 始终显示 */}
+      <Box gap={2} paddingLeft={2}>
+        <Text color="gray" dimColor>
+          <Text color="gray" bold>Enter</Text> submit
+        </Text>
+        <Text color="gray" dimColor>
+          <Text color="gray" bold>↑↓</Text> history
+        </Text>
+        <Text color="gray" dimColor>
+          <Text color="gray" bold>Ctrl+↑↓</Text> scroll
+        </Text>
+        <Text color="gray" dimColor>
+          <Text color="gray" bold>Esc</Text> cancel
+        </Text>
       </Box>
     </Box>
   )
-}
+})

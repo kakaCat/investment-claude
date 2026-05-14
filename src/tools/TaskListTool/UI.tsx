@@ -1,6 +1,6 @@
 import React from 'react'
 import { Box, Text } from 'ink'
-import type { Task } from '../../tasks/types.js'
+import type { Task, TaskStatus } from '../../tasks/types.js'
 
 export function TaskListToolUseUI({ input }: { input: { status?: string; owner?: string } }) {
   const filters: string[] = []
@@ -44,6 +44,74 @@ export function TaskListToolResultUI({ result }: { result: string }) {
           {task.owner && <Text color="gray">@{task.owner}</Text>}
         </Box>
       ))}
+    </Box>
+  )
+}
+
+type TaskListResult = {
+  tasks: Task[]
+  totalTasks: number
+  filters: {
+    status?: TaskStatus
+    owner?: string
+  }
+}
+
+function statusIcon(status: Task['status']): string {
+  switch (status) {
+    case 'completed': return '✓'
+    case 'in_progress': return '▶'
+    case 'stopped': return '✗'
+    case 'pending': return '○'
+    default: return '?'
+  }
+}
+
+export function TaskListToolResultMessageUI({ output }: { output: TaskListResult }) {
+  if (output.totalTasks === 0) {
+    return (
+      <Box flexDirection="column">
+        <Text color="yellow">No tasks found</Text>
+        {output.filters.status && <Text color="gray">Filter: status={output.filters.status}</Text>}
+        {output.filters.owner && <Text color="gray">Filter: owner={output.filters.owner}</Text>}
+      </Box>
+    )
+  }
+
+  const byStatus = output.tasks.reduce((acc, task) => {
+    acc[task.status] = (acc[task.status] || 0) + 1
+    return acc
+  }, {} as Record<TaskStatus, number>)
+
+  return (
+    <Box flexDirection="column">
+      <Text color="cyan">
+        Found {output.totalTasks} task{output.totalTasks !== 1 ? 's' : ''}
+        {output.filters.status && ` (status: ${output.filters.status})`}
+        {output.filters.owner && ` (owner: ${output.filters.owner})`}
+      </Text>
+
+      {Object.keys(byStatus).length > 1 && (
+        <Text color="gray">
+          {Object.entries(byStatus).map(([status, count]) => `${status}: ${count}`).join(', ')}
+        </Text>
+      )}
+
+      <Box flexDirection="column" marginTop={1}>
+        {output.tasks.slice(0, 10).map((task) => (
+          <Box key={task.id} gap={1}>
+            <Text color={statusColor(task.status) as Parameters<typeof Text>[0]['color']}>
+              {statusIcon(task.status)}
+            </Text>
+            <Text color="gray">#{task.id}</Text>
+            <Text>{task.subject}</Text>
+            {task.owner && <Text color="gray">@{task.owner}</Text>}
+          </Box>
+        ))}
+        {output.totalTasks > 10 && (
+          <Text color="gray">... and {output.totalTasks - 10} more</Text>
+        )}
+      </Box>
     </Box>
   )
 }

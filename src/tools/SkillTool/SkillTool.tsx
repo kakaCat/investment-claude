@@ -45,10 +45,29 @@ export const SkillTool = buildTool({
     return { data: content }
   },
   mapToolResultToToolResultBlockParam(data, toolUseId) {
+    if (data.startsWith('ERROR:')) {
+      let errorMsg = `<error>${data}</error>\n\n`
+
+      if (data.includes('Skill name cannot be empty')) {
+        errorMsg += `Provide a valid skill name (e.g., "commit", "review-pr").`
+      } else if (data.includes('Unknown skill')) {
+        errorMsg += `The skill was not found. Use discover_skills to see all available skills in the current project.`
+      } else if (data.includes('Failed to read skill file')) {
+        errorMsg += `The skill file exists but could not be read. Check file permissions or file integrity.`
+      }
+
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: errorMsg,
+        is_error: true,
+      }
+    }
+
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: data,
+      content: `${data}\n\n[Skill loaded successfully. Follow the instructions above.]`,
     }
   },
 })

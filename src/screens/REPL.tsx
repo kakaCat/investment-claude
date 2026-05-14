@@ -14,9 +14,10 @@ import { getAllTools, findTool } from '../tools/index.js'
 import { getPluginTools } from '../plugins/index.js'
 import { getAppState, setAppState } from '../state/AppState.js'
 import { useAssistantHistory } from '../hooks/useAssistantHistory.js'
-import { Messages } from '../components/Messages.js'
+import { Messages, EMPTY_COLLAPSE, type CollapseState } from '../components/Messages.js'
 import { PromptInput } from '../components/PromptInput.js'
 import { Spinner } from '../components/Spinner.js'
+import { StatusBar } from '../components/StatusBar.js'
 import type { SSHSession } from '../ssh/index.js'
 import type { SwarmConfig } from '../swarm/index.js'
 import type { ToolUseContext } from '../Tool.js'
@@ -117,6 +118,8 @@ export function REPL(_props: Props) {
   const [partialSelectedIndex, setPartialSelectedIndex] = useState(0)
   const [skills, setSkills] = useState<Skill[]>([])
   const [scrollOffset, setScrollOffset] = useState(0)
+  // 折叠状态 — 工具组/思考/回复的展开/折叠
+  const [collapse, setCollapse] = useState<CollapseState>(EMPTY_COLLAPSE)
   const sessionIdRef = useRef<string>(randomUUID())
 
   // AbortController — 用于 Ctrl+C 中止当前 query（对标 Claude Code interrupt()）
@@ -132,6 +135,8 @@ export function REPL(_props: Props) {
   const smInitializedRef = useRef(false)
   const streamStartTsRef = useRef<number>(0)
   const streamIdleWarningFiredRef = useRef(false)
+  // Ref for permission context — 确保 canUseTool 总是使用最新的权限规则
+  const permissionContextRef = useRef(getAppState().permissionContext)
 
   // ── canUseTool 回调（传给 query()，在工具执行前弹出确认 UI）─────────────────
   // 对标 Claude Code canUseTool / wrappedCanUseTool
@@ -142,7 +147,6 @@ export function REPL(_props: Props) {
         return 'deny'
       }
 
-      const appState = getAppState()
       const tool = findTool(name, allTools)
       if (!tool) return 'allow'
 
@@ -153,10 +157,11 @@ export function REPL(_props: Props) {
         contentString = `${inp.function}:${inp.action}`
       }
 
+      // 使用 ref 而不是 getAppState()，确保使用最新的权限规则
       const decision = checkToolPermission(
         tool,
         inp,
-        appState.permissionContext,
+        permissionContextRef.current,
         contentString,
       )
 
@@ -182,9 +187,15 @@ export function REPL(_props: Props) {
           behavior: userChoice.action as 'allow' | 'deny',
         }
         persistPermissionUpdate(update)
+
+        // 立即更新 ref，确保下次调用时生效
+        const newContext = applyPermissionUpdate(permissionContextRef.current, update)
+        permissionContextRef.current = newContext
+
+        // 同时更新 AppState
         setAppState(prev => ({
           ...prev,
-          permissionContext: applyPermissionUpdate(prev.permissionContext, update),
+          permissionContext: newContext,
         }))
       }
 
@@ -307,8 +318,19 @@ export function REPL(_props: Props) {
   )
 
   // ── 处理用户提交 ──────────────────────────────────────────────────────────
+  const handleCancel = useCallback(() => {
+    abortControllerRef.current?.abort('interrupt')
+  }, [])
+
   const handleSubmit = useCallback(
     async (input: string) => {
+      // 如果正在执行，先中断当前查询（支持中断续传）
+      if (isLoadingRef.current) {
+        abortControllerRef.current?.abort('interrupt')
+        // 等待当前查询完全结束
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+
       // ── slash commands ──────────────────────────────────────────────────
       const originalInput = input
       if (input.startsWith('/')) {
@@ -404,6 +426,8 @@ export function REPL(_props: Props) {
 
             case 'done':
               history.finalizeAssistantMessage()
+              // 工具调用现在单独显示（对标 Claude Code），不再需要展开 tool group
+              break
               break
 
             case 'max_turns_reached':
@@ -445,7 +469,6 @@ export function REPL(_props: Props) {
             case 'tool_use':
               // 工具正在执行（权限已通过），记录 tool_use block 到 assistant message
               history.appendToolUse(event.id, event.name, event.input)
-              setPermissionRequest(null)
               break
 
             case 'tool_result':
@@ -476,6 +499,8 @@ export function REPL(_props: Props) {
       initSessionMemory()
       initObservability()
       initPermissions()
+      // 初始化后同步 permissionContext ref
+      permissionContextRef.current = getAppState().permissionContext
     }
 
     // 加载 skill 列表，供命令面板显示
@@ -643,9 +668,19 @@ export function REPL(_props: Props) {
         return
       }
 
-      // Ctrl+↑ / Ctrl+↓ 滚动消息历史（避免与 PromptInput 的 ↑↓ 历史导航冲突）
+      // 滚动消息历史：PageUp/PageDown（Ink 原生支持，无兼容问题）+ Ctrl+↑/↓ 作为备用
       if (!isLoading && !permissionRequest && !askUserRequest && !planApprovalRequest && !verifyRequest) {
-        const SCROLL_STEP = 3
+        const SCROLL_STEP = 5
+        const PAGE_STEP = (stdout?.rows ?? 24) - 8 // 大约一屏
+
+        if (key.pageUp) {
+          setScrollOffset((o) => o + PAGE_STEP)
+          return
+        }
+        if (key.pageDown) {
+          setScrollOffset((o) => Math.max(0, o - PAGE_STEP))
+          return
+        }
         if (key.ctrl && key.upArrow) {
           setScrollOffset((o) => o + SCROLL_STEP)
           return
@@ -654,30 +689,82 @@ export function REPL(_props: Props) {
           setScrollOffset((o) => Math.max(0, o - SCROLL_STEP))
           return
         }
+
+        // Ctrl+G — 工具调用现在始终显示（对标 Claude Code），不再需要 toggle
+        // 保留此快捷键位，留作将来扩展
+
+
+        // Ctrl+E — toggle ALL assistant messages expand/collapse
+        if (key.ctrl && input === 'e') {
+          const msgs = history.displayMessages
+          const assistantIndices: number[] = []
+          for (let i = 0; i < msgs.length; i++) {
+            if (msgs[i].type === 'assistant') assistantIndices.push(i)
+          }
+          // 排除最后一个（最新回复由 isLatest 自动展开）
+          // Ctrl+E 控制非最新的 assistant 展开/折叠
+          if (assistantIndices.length === 0) return
+
+          setCollapse((prev) => {
+            const allExpanded = assistantIndices.every(idx => prev.expandedAssistants.has(idx))
+            const next = new Set(prev.expandedAssistants)
+            if (allExpanded) {
+              for (const idx of assistantIndices) next.delete(idx)
+            } else {
+              for (const idx of assistantIndices) next.add(idx)
+            }
+            return { ...prev, expandedAssistants: next }
+          })
+          return
+        }
+
+        // Ctrl+T — toggle ALL thinking groups expand/collapse
+        if (key.ctrl && input === 't') {
+          const msgs = history.displayMessages
+          // 每个有 thinking 的 assistant 算一个 thinking group
+          let totalThinkingGroups = 0
+          for (const msg of msgs) {
+            if (msg.type === 'assistant' && msg.content.some(c => c.type === 'thinking')) {
+              totalThinkingGroups++
+            }
+          }
+          if (totalThinkingGroups === 0) return
+
+          setCollapse((prev) => {
+            const allExpanded = prev.expandedThinkings.size >= totalThinkingGroups
+            const next = new Set<number>()
+            if (!allExpanded) {
+              for (let i = 0; i < totalThinkingGroups; i++) next.add(i)
+            }
+            return { ...prev, expandedThinkings: next }
+          })
+          return
+        }
       }
     },
     { isActive: true },
   )
 
   return (
-    <Box flexDirection="column" padding={1}>
-      {/* 消息历史 */}
-      <Messages
-        messages={history.displayMessages}
-        tools={tools}
-        maxHeight={(stdout?.rows ?? 24) - 6}
-        scrollOffset={scrollOffset}
+    <Box flexDirection="column" height="100%">
+      {/* 状态栏 */}
+      <StatusBar
+        messageCount={history.displayMessages.length}
+        isStreaming={isLoading}
+        isPlanMode={isPlanMode}
       />
 
-      {/* 计划模式状态栏 */}
-      {isPlanMode && (
-        <Box paddingX={1}>
-          <Text color="blue" bold>[PLAN MODE] </Text>
-          <Text color="gray">Write tools disabled — call exit_plan_mode when ready</Text>
-        </Box>
-      )}
+      {/* 消息历史区 — 占据剩余空间 */}
+      <Box flexDirection="column" flexGrow={1} overflow="hidden">
+        <Messages
+          messages={history.displayMessages}
+          tools={tools}
+          maxHeight={undefined}
+          scrollOffset={scrollOffset}
+          collapse={collapse}
+        />
 
-      {/* Partial compact selection mode */}
+        {/* Partial compact selection mode */}
         {isPartialSelectMode && (
           <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1}>
             <Text color="cyan" bold>Select pivot message for partial compact</Text>
@@ -686,19 +773,20 @@ export function REPL(_props: Props) {
           </Box>
         )}
 
-      {/* Compact status */}
-      {isCompacting && (
-        <Box paddingX={1}>
-          <Text color="cyan">Compressing conversation…</Text>
-        </Box>
-      )}
-      {lastCompactInfo && !isCompacting && (
-        <Box paddingX={1}>
-          <Text color="green" dimColor>
-            Compacted — saved ~{lastCompactInfo.savedTokens.toLocaleString()} tokens
-          </Text>
-        </Box>
-      )}
+        {/* Compact status */}
+        {isCompacting && (
+          <Box paddingX={1}>
+            <Text color="cyan">Compressing conversation…</Text>
+          </Box>
+        )}
+        {lastCompactInfo && !isCompacting && (
+          <Box paddingX={1}>
+            <Text color="green" dimColor>
+              Compacted — saved ~{lastCompactInfo.savedTokens.toLocaleString()} tokens
+            </Text>
+          </Box>
+        )}
+      </Box>
 
       {/* 工具权限确认 */}
       {permissionRequest && (
@@ -778,15 +866,33 @@ export function REPL(_props: Props) {
         </Box>
       )}
 
-      {/* 加载中 — 始终渲染，通过 display 控制可见性避免挂载/卸载闪烁 */}
+      {/* 加载中指示器 */}
       {isLoading && !permissionRequest && !askUserRequest && !planApprovalRequest && !verifyRequest && (
         <Spinner />
       )}
 
-      {/* 输入框 — 始终渲染，通过条件控制可见性 */}
-      {!isLoading && !askUserRequest && !planApprovalRequest && !verifyRequest && (
-        <PromptInput onSubmit={handleSubmit} isLoading={isLoading} onExit={doExit} onCancel={() => abortControllerRef.current?.abort('interrupt')} skills={skills} />
-      )}
+      {/* 输入区 — 固定在底部 */}
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor="red"
+        paddingX={1}
+      >
+        <PromptInput
+          onSubmit={handleSubmit}
+          isLoading={isLoading}
+          disabled={
+            !!permissionRequest ||
+            !!askUserRequest ||
+            !!planApprovalRequest ||
+            !!verifyRequest ||
+            isPartialSelectMode
+          }
+          onExit={doExit}
+          onCancel={handleCancel}
+          skills={skills}
+        />
+      </Box>
     </Box>
   )
 }

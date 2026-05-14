@@ -32,10 +32,19 @@ export const CronListTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam(output, toolUseId) {
+    if (output === 'No scheduled jobs.') {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: 'No scheduled jobs.\n\nUse cron_create to schedule a new task.',
+      }
+    }
+
+    const jobCount = output.split('\n').length
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: output,
+      content: `${output}\n\nTotal: ${jobCount} scheduled job${jobCount > 1 ? 's' : ''}. Use cron_delete to cancel any job.`,
     }
   },
 })

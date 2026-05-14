@@ -112,18 +112,34 @@ export function useAssistantHistory(): UseAssistantHistoryResult {
     setPendingAssistantContent([])
   }, [])
 
-  return {
-    messages,
-    displayMessages,
-    isStreaming: pendingAssistantContent.length > 0,
-    appendUserMessage,
-    appendAssistantMessage,
-    startAssistantMessage,
-    appendStreamingDelta,
-    appendThinkingDelta,
-    appendToolUse,
-    finalizeAssistantMessage,
-    appendToolResult,
-    clearMessages,
-  }
+  return useMemo(
+    () => ({
+      messages,
+      displayMessages,
+      isStreaming: pendingAssistantContent.length > 0,
+      appendUserMessage,
+      appendAssistantMessage,
+      startAssistantMessage,
+      appendStreamingDelta,
+      appendThinkingDelta,
+      appendToolUse,
+      finalizeAssistantMessage,
+      appendToolResult,
+      clearMessages,
+    }),
+    [
+      messages,
+      displayMessages,
+      pendingAssistantContent.length,
+      appendUserMessage,
+      appendAssistantMessage,
+      startAssistantMessage,
+      appendStreamingDelta,
+      appendThinkingDelta,
+      appendToolUse,
+      finalizeAssistantMessage,
+      appendToolResult,
+      clearMessages,
+    ],
+  )
 }

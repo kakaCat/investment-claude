@@ -91,6 +91,29 @@ def _call_trading_engine(command: str, **kwargs) -> dict:
             return {"success": True, "message": "T+1 可卖数量已更新"}
         elif command == "reset_account":
             return engine.reset_account(kwargs.get("initial_cash", 1000000.0))
+        elif command == "get_risk_alerts":
+            return engine.get_risk_alerts(
+                kwargs.get("stop_loss_pct", -15.0),
+                kwargs.get("take_profit_pct", 30.0),
+            )
+        elif command == "auto_decision_log":
+            return engine.auto_decision_log(
+                action=kwargs.get("action", "hold"),
+                symbol=kwargs.get("symbol", ""),
+                name=kwargs.get("name", ""),
+                price=kwargs.get("price", 0.0),
+                quantity=kwargs.get("quantity", 0),
+                rationale=kwargs.get("rationale", ""),
+            )
+        elif command == "verify_past_decisions":
+            return engine.verify_past_decisions(
+                days_ago=kwargs.get("days_ago", 7),
+            )
+        elif command == "sync_portfolio_risk_alerts":
+            return engine.sync_portfolio_risk_alerts(
+                kwargs.get("stop_loss_pct", -15.0),
+                kwargs.get("take_profit_pct", 30.0),
+            )
         else:
             return {"error": f"Unknown trading command: {command}"}
     except Exception as e:
@@ -227,52 +250,58 @@ def get_hk_stock_history(
     start_date: str = None,
     end_date: str = None,
     adjust: str = "qfq",
+    count: int = None,
 ) -> dict:
-    """港股历史行情（via stooq），最多返回60条"""
-    import io
-    from datetime import datetime
+    """港股历史行情（via akshare东方财富）"""
+    from datetime import datetime, timedelta
 
-    import requests as _req
+    import akshare as ak
 
     code = _hk_code(symbol)
-    # stooq interval: d=daily, w=weekly, m=monthly
-    interval_map = {"daily": "d", "weekly": "w", "monthly": "m"}
-    interval = interval_map.get(period, "d")
-    # strip leading zeros for stooq (09988 -> 9988)
-    stooq_code = str(int(code))
-    try:
-        r = _req.get(
-            f"https://stooq.com/q/d/l/",
-            params={"s": f"{stooq_code}.hk", "i": interval},
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=10,
+
+    # Set default date range if not provided
+    if not end_date:
+        end_date = datetime.now().strftime("%Y%m%d")
+    if not start_date:
+        # Default to 1 year of data or based on count
+        days_back = (count if count else 250) * (
+            1 if period == "daily" else 7 if period == "weekly" else 30
         )
-        lines = r.text.strip().split("\n")
-        if len(lines) < 2:
+        start_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y%m%d")
+
+    try:
+        df = ak.stock_hk_hist(
+            symbol=code, period=period, start_date=start_date, end_date=end_date, adjust=adjust
+        )
+
+        if df is None or df.empty:
             return {"error": f"无历史数据: {symbol}"}
-        # CSV: Date,Open,High,Low,Close,Volume
+
+        # Limit records if count is specified
+        if count:
+            df = df.tail(count)
+
         records = []
         prev_close = None
-        for line in lines[1:][-60:]:  # skip header, last 60
-            parts = line.strip().split(",")
-            if len(parts) < 5:
-                continue
-            close = _safe_float(parts[4])
+        for _, row in df.iterrows():
+            close = _safe_float(row.get("收盘", row.get("close", 0)))
             change_pct = round((close - prev_close) / prev_close * 100, 2) if prev_close else 0.0
             records.append(
                 {
-                    "date": parts[0],
-                    "open": _safe_float(parts[1]),
-                    "high": _safe_float(parts[2]),
-                    "low": _safe_float(parts[3]),
+                    "date": str(row.get("日期", row.get("date", ""))),
+                    "open": _safe_float(row.get("开盘", row.get("open", 0))),
+                    "high": _safe_float(row.get("最高", row.get("high", 0))),
+                    "low": _safe_float(row.get("最低", row.get("low", 0))),
                     "close": close,
-                    "volume": _safe_float(parts[5] if len(parts) > 5 else 0, decimals=0),
+                    "volume": _safe_float(row.get("成交量", row.get("volume", 0)), decimals=0),
                     "change_pct": change_pct,
                 }
             )
             prev_close = close
+
         if not records:
             return {"error": f"无历史数据: {symbol}"}
+
         return {
             "symbol": code,
             "period": period,
@@ -526,24 +555,34 @@ def get_financial_indicators(symbol: str) -> dict:
         if df.empty:
             return {"error": f"无财务数据: {symbol}"}
 
+        # Get column names to handle different formats
+        date_col = "报告期" if "报告期" in df.columns else "report_date"
+
         # 按报告期分组，取最近4个季度
-        report_dates = df["report_date"].unique()[:4]
+        report_dates = df[date_col].unique()[:4]
         quarters = []
 
         for report_date in report_dates:
-            period_data = df[df["report_date"] == report_date]
-            metrics = {
-                row["metric_name"]: _safe_float(row["value"]) for _, row in period_data.iterrows()
-            }
+            period_data = df[df[date_col] == report_date]
+
+            # Build metrics dict from available columns
+            metrics = {}
+            for _, row in period_data.iterrows():
+                # Handle different column name formats
+                for col in df.columns:
+                    if col != date_col:
+                        metrics[col] = _safe_float(row[col])
 
             quarters.append(
                 {
-                    "report_date": report_date,
-                    "roe": metrics.get("index_full_diluted_roe", 0),
-                    "gross_margin": metrics.get("sale_gross_margin", 0),
-                    "net_margin": metrics.get("sale_net_interest_ratio", 0),
-                    "debt_ratio": metrics.get("equity_ratio", 0) * 100,
-                    "current_ratio": metrics.get("current_ratio", 0),
+                    "report_date": str(report_date),
+                    "roe": metrics.get("净资产收益率", metrics.get("index_full_diluted_roe", 0)),
+                    "gross_margin": metrics.get("销售毛利率", metrics.get("sale_gross_margin", 0)),
+                    "net_margin": metrics.get(
+                        "销售净利率", metrics.get("sale_net_interest_ratio", 0)
+                    ),
+                    "debt_ratio": metrics.get("资产负债率", metrics.get("equity_ratio", 0)),
+                    "current_ratio": metrics.get("流动比率", metrics.get("current_ratio", 0)),
                 }
             )
 
@@ -649,7 +688,7 @@ def screen_stocks_quality(
 
 
 def get_stock_news(symbol: str, num: int = 10) -> dict:
-    """个股新闻 (东方财富 + 新浪财经 + 网页抓取，多源汇总)"""
+    """个股新闻 (东方财富 + 财新网 + 通用财经新闻，多源汇总)"""
     from datetime import datetime
 
     import akshare as ak
@@ -672,7 +711,7 @@ def get_stock_news(symbol: str, num: int = 10) -> dict:
         "data_date": datetime.now().strftime("%Y-%m-%d"),
     }
 
-    # 1. 东方财富 API
+    # 1. 东方财富 API (个股新闻)
     try:
         df = ak.stock_news_em(symbol=em_symbol)
         if df is not None and not df.empty:
@@ -680,33 +719,37 @@ def get_stock_news(symbol: str, num: int = 10) -> dict:
                 {
                     "title": str(row.get("新闻标题", "")),
                     "date": str(row.get("发布时间", "")),
-                    "source": str(row.get("文章来源", "")),
+                    "source": str(row.get("文章来源", "eastmoney")),
                     "content": str(row.get("新闻内容", ""))[:200],
                 }
                 for _, row in df.head(num).iterrows()
             ]
             result["data"].extend(records)
             result["sources"].append("eastmoney")
+    except KeyError as e:
+        # 东方财富API已知bug: 某些股票返回数据缺少'code'字段
+        result["eastmoney_error"] = f"API数据格式错误: {str(e)}"
     except Exception as e:
         result["eastmoney_error"] = str(e)
 
-    # 2. 新浪财经（并行获取）
-    try:
-        df2 = ak.stock_news_main_sina()
-        if df2 is not None and not df2.empty:
-            records2 = [
-                {
-                    "title": str(row.get("title", "")),
-                    "date": str(row.get("date", "")),
-                    "source": "sina",
-                    "content": "",
-                }
-                for _, row in df2.head(num).iterrows()
-            ]
-            result["data"].extend(records2)
-            result["sources"].append("sina")
-    except Exception as e:
-        result["sina_error"] = str(e)
+    # 2. 财新网通用财经新闻（作为补充）
+    if len(result["data"]) < num:
+        try:
+            df2 = ak.stock_news_main_cx()
+            if df2 is not None and not df2.empty:
+                records2 = [
+                    {
+                        "title": str(row.get("title", "")),
+                        "date": str(row.get("time", "")),
+                        "source": "caixin",
+                        "content": str(row.get("summary", ""))[:200] if "summary" in row else "",
+                    }
+                    for _, row in df2.head(num - len(result["data"])).iterrows()
+                ]
+                result["data"].extend(records2)
+                result["sources"].append("caixin")
+        except Exception as e:
+            result["caixin_error"] = str(e)
 
     # 3. 网页抓取（并行获取）
     try:
@@ -2782,6 +2825,7 @@ FUNCTIONS = {
     "get_stock_realtime_price": get_stock_realtime_price,
     "get_stock_history": get_stock_history,
     "get_financial_indicators": get_financial_indicators,
+    "get_financial_data": get_financial_indicators,  # alias
     "get_sector_list": get_sector_list,
     "screen_stocks_by_sector": screen_stocks_by_sector,
     "screen_stocks_quality": screen_stocks_quality,
@@ -2857,6 +2901,24 @@ FUNCTIONS = {
     "update_t1_available": lambda: _call_trading_engine("update_t1_available"),
     "reset_account": lambda initial_cash=1000000.0: _call_trading_engine(
         "reset_account", initial_cash=initial_cash
+    ),
+    "get_risk_alerts": lambda stop_loss_pct=-15.0, take_profit_pct=30.0: _call_trading_engine(
+        "get_risk_alerts", stop_loss_pct=stop_loss_pct, take_profit_pct=take_profit_pct
+    ),
+    "auto_decision_log": lambda action="hold", symbol="", name="", price=0.0, quantity=0, rationale="": _call_trading_engine(
+        "auto_decision_log",
+        action=action,
+        symbol=symbol,
+        name=name,
+        price=price,
+        quantity=quantity,
+        rationale=rationale,
+    ),
+    "verify_past_decisions": lambda days_ago=7: _call_trading_engine(
+        "verify_past_decisions", days_ago=days_ago
+    ),
+    "sync_portfolio_risk_alerts": lambda stop_loss_pct=-15.0, take_profit_pct=30.0: _call_trading_engine(
+        "sync_portfolio_risk_alerts", stop_loss_pct=stop_loss_pct, take_profit_pct=take_profit_pct
     ),
 }
 

@@ -43,10 +43,29 @@ export const CronCreateTool = buildTool({
     return { data: `Scheduled job ${id} (${humanSchedule}). Session-only. ${recurringNote}` }
   },
   mapToolResultToToolResultBlockParam(output, toolUseId) {
+    if (output.startsWith('ERROR:')) {
+      let errorMsg = `<error>${output}</error>\n\n`
+
+      if (output.includes('Invalid cron expression')) {
+        errorMsg += `Cron format: "minute hour day-of-month month day-of-week"\nExample: "0 9 * * 1-5" = weekdays at 9am\nExample: "*/15 * * * *" = every 15 minutes`
+      } else if (output.includes('does not match any date')) {
+        errorMsg += `The cron expression is valid but doesn't match any date in the next year. Check your day-of-month and month values.`
+      } else if (output.includes('Too many scheduled jobs')) {
+        errorMsg += `Use cron_list to see all jobs, then cron_delete to remove unused ones.`
+      }
+
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: errorMsg,
+        is_error: true,
+      }
+    }
+
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: output,
+      content: `${output}\n\nThe scheduled task will execute automatically at the specified time(s). Use cron_list to view all scheduled jobs.`,
     }
   },
 })

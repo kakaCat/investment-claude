@@ -38,10 +38,14 @@ export function CommandInput({ onSubmit, onCancel, isActive }: Props) {
   }, [isActive])
 
   return (
-    <Box borderStyle="single" borderColor="cyan" paddingX={1}>
-      <Text color="cyan">:</Text>
-      <Text>{input}</Text>
-      <Text color="gray"> (Enter提交 | Esc取消)</Text>
+    <Box borderStyle="double" borderColor="cyan" paddingX={1} paddingY={1} height={3}>
+      <Box flexDirection="column">
+        <Box>
+          <Text color="cyan" bold>:</Text>
+          <Text backgroundColor="blue" color="white">{input || ' '}</Text>
+        </Box>
+        <Text color="gray">Enter提交 | Esc取消</Text>
+      </Box>
     </Box>
   )
 }

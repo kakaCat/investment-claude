@@ -1,5 +1,6 @@
 import React from 'react'
 import { Box, Text } from 'ink'
+
 export function AskUserQuestionToolUseUI({ input }: { input: { question: string; options: Array<{ label: string; description?: string }> } }) {
   return (
     <Box flexDirection="column">
@@ -11,6 +12,27 @@ export function AskUserQuestionToolUseUI({ input }: { input: { question: string;
   )
 }
 
-export function AskUserQuestionToolResultUI({ result }: { result: string }) {
-  return <Box><Text color="magenta" bold>→ </Text><Text>{result}</Text></Box>
+type AskUserQuestionResult = {
+  question: string
+  options: Array<{ label: string; description?: string }>
+  answer: string
+  isDefault: boolean
+}
+
+export function AskUserQuestionToolResultUI({ result }: { result: string | AskUserQuestionResult }) {
+  // Backward compatibility: handle string result
+  if (typeof result === 'string') {
+    return <Box><Text color="magenta" bold>→ </Text><Text>{result}</Text></Box>
+  }
+
+  // New structured result
+  return (
+    <Box flexDirection="column">
+      <Box>
+        <Text color="magenta" bold>→ </Text>
+        <Text color={result.isDefault ? 'yellow' : 'green'}>{result.answer}</Text>
+        {result.isDefault && <Text color="gray"> (default)</Text>}
+      </Box>
+    </Box>
+  )
 }

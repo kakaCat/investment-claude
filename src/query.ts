@@ -32,6 +32,8 @@ import { registerMessageId } from './utils/messageIds.js'
 import { isSnipped } from './utils/snipStore.js'
 import { isRetryable, getRetryDelay } from './utils/apiRetry.js'
 import { modelSupportsVision } from './utils/modelCapabilities.js'
+import { validateToolInput } from './utils/validateToolInput.js'
+import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY, shouldUseGlobalCacheScope } from './constants/systemPromptSections.js'
 
 // ── 类型 ──────────────────────────────────────────────────────────────────────
 
@@ -135,6 +137,50 @@ function toSDKMessages(messages: Message[], model: string): Anthropic.MessagePar
         content: msg.content as Anthropic.MessageParam['content'],
       }
     })
+}
+
+/**
+ * 构建 system 参数，支持 prompt caching。
+ * 如果启用了全局缓存作用域且 systemPrompt 包含边界标记，
+ * 则将其拆分为静态和动态两个 block，并给静态部分添加 cache_control。
+ */
+function buildSystemParam(
+  systemPrompt: string,
+): string | Array<Anthropic.TextBlockParam> {
+  if (!shouldUseGlobalCacheScope()) {
+    return systemPrompt
+  }
+
+  const boundaryIndex = systemPrompt.indexOf(SYSTEM_PROMPT_DYNAMIC_BOUNDARY)
+  if (boundaryIndex === -1) {
+    // 没有边界标记，返回原始字符串
+    return systemPrompt
+  }
+
+  // 拆分为静态和动态部分
+  const staticPart = systemPrompt.slice(0, boundaryIndex).trim()
+  const dynamicPart = systemPrompt.slice(boundaryIndex + SYSTEM_PROMPT_DYNAMIC_BOUNDARY.length).trim()
+
+  const blocks: Array<Anthropic.TextBlockParam> = []
+
+  // 静态部分 - 添加 cache_control
+  if (staticPart) {
+    blocks.push({
+      type: 'text',
+      text: staticPart,
+      cache_control: { type: 'ephemeral' },
+    })
+  }
+
+  // 动态部分 - 不添加 cache_control
+  if (dynamicPart) {
+    blocks.push({
+      type: 'text',
+      text: dynamicPart,
+    })
+  }
+
+  return blocks
 }
 
 /**
@@ -252,7 +298,11 @@ async function* executeToolsConcurrently(
         toolContent = `Error: tool "${toolUse.name}" not found`
       } else {
         try {
-          if (tool.callWithBlocks) {
+          // Validate tool input against schema
+          const validation = validateToolInput(toolUse.input, tool.inputSchema)
+          if (!validation.valid) {
+            toolContent = `Invalid input for tool "${toolUse.name}":\n${validation.errors.join('\n')}`
+          } else if (tool.callWithBlocks) {
             toolContent = await tool.callWithBlocks(toolUse.input, context)
           } else {
             const result = await tool.call(toolUse.input, context)
@@ -489,11 +539,12 @@ export async function* query(params: QueryParams): AsyncGenerator<StreamEvent> {
       const thinkingParams = getThinkingParams(model)
       const sdkMessages = toSDKMessages(messagesForQuery, model)
       const sdkTools = tools.map(toSDKTool)
+      const systemParam = buildSystemParam(systemPrompt)
 
       const stream = client.messages.stream(
         {
           model,
-          system: systemPrompt,
+          system: systemParam,
           messages: sdkMessages,
           tools: sdkTools,
           max_tokens: thinkingParams.thinking

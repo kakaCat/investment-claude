@@ -1,6 +1,5 @@
 import React from 'react'
 import { join } from 'path'
-import { homedir } from 'os'
 import { mkdir, writeFile } from 'fs/promises'
 import { buildTool } from '../../Tool.js'
 import { getSessionId } from '../../bootstrap/state.js'
@@ -13,11 +12,11 @@ import { BrowserToolUseUI, BrowserToolResultUI } from './UI.js'
 const GLOBAL_TIMEOUT_MS = 30_000 // 全局超时 30 秒
 
 function getScreenshotDir(): string {
-  return join(homedir(), '.pi', 'sessions', getSessionId(), 'screenshots')
+  return join(process.cwd(), '.pi', 'sessions', getSessionId(), 'screenshots')
 }
 
 function getSessionFileDir(): string {
-  return join(homedir(), '.pi', 'sessions', getSessionId(), 'browser')
+  return join(process.cwd(), '.pi', 'sessions', getSessionId(), 'browser')
 }
 
 /**
@@ -61,8 +60,15 @@ async function handleAction(input: Record<string, unknown>): Promise<ToolResultC
       await page.goto(url, { waitUntil: 'networkidle', timeout: 30_000 })
       const title = await page.title()
       const text = await page.evaluate(() => document.body?.innerText ?? '')
-      const preview = text.slice(0, 2000)
-      return `Title: ${title}\n\n${preview}${text.length > 2000 ? '\n...(truncated)' : ''}`
+
+      // 保存完整内容到文件
+      const dir = getSessionFileDir()
+      await mkdir(dir, { recursive: true })
+      const filepath = join(dir, `navigate-${Date.now()}.txt`)
+      await writeFile(filepath, text, 'utf-8')
+
+      const preview = text.slice(0, 500)
+      return `Navigated to: ${url}\nTitle: ${title}\nContent saved to: ${filepath}\n\nPreview:\n${preview}\n...(${text.length} chars total)`
     } catch (err) {
       throw new Error(`Navigation to "${url}" failed: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -74,7 +80,15 @@ async function handleAction(input: Record<string, unknown>): Promise<ToolResultC
     try {
       const snapshot = await (page as any).accessibility?.snapshot?.()
       if (!snapshot) return 'No accessibility snapshot available.'
-      return JSON.stringify(snapshot, null, 2).slice(0, 8000)
+
+      const snapshotJson = JSON.stringify(snapshot, null, 2)
+      const dir = getSessionFileDir()
+      await mkdir(dir, { recursive: true })
+      const filepath = join(dir, `snapshot-${Date.now()}.json`)
+      await writeFile(filepath, snapshotJson, 'utf-8')
+
+      const preview = snapshotJson.slice(0, 500)
+      return `Accessibility snapshot saved to: ${filepath}\n\nPreview:\n${preview}\n...(${snapshotJson.length} chars total)`
     } catch (err) {
       return `Accessibility snapshot not available: ${err instanceof Error ? err.message : String(err)}`
     }
@@ -113,7 +127,15 @@ async function handleAction(input: Record<string, unknown>): Promise<ToolResultC
     const page = await getPage()
     await page.goto(`https://www.bing.com/search?q=${encodeURIComponent(query)}`, { waitUntil: 'domcontentloaded' })
     const text = await page.evaluate(() => document.body?.innerText ?? '')
-    return text.slice(0, 3000)
+
+    // 保存搜索结果到文件
+    const dir = getSessionFileDir()
+    await mkdir(dir, { recursive: true })
+    const filepath = join(dir, `search-${Date.now()}.txt`)
+    await writeFile(filepath, text, 'utf-8')
+
+    const preview = text.slice(0, 500)
+    return `Search results for "${query}" saved to: ${filepath}\n\nPreview:\n${preview}\n...(${text.length} chars total)`
   }
 
   // ── screenshot ────────────────────────────────────────────────────────────────
@@ -355,10 +377,35 @@ doubleClick: { type: 'boolean', description: 'Double click instead of single cli
     }
   },
   mapToolResultToToolResultBlockParam(data, toolUseId) {
+    // data 是字符串或包含错误的对象
+    if (typeof data === 'string') {
+      // 成功情况：根据操作类型提供上下文提示
+      let content = data
+
+      // 为不同操作添加上下文提示
+      if (data.includes('Screenshot saved:')) {
+        content = `${data}\n\nThe screenshot has been captured and is available for viewing. You can analyze the visual content or take further actions based on what you see.`
+      } else if (data.includes('saved to:')) {
+        // 统一处理所有保存到文件的操作（navigate, snapshot, search, getText, getHTML）
+        content = `${data}\n\nThe content has been saved to a file. Use the Read tool to analyze the full content, or use Grep to search for specific information.`
+      } else if (data.startsWith('Clicked:') || data.startsWith('Filled:') || data.startsWith('Typed into:')) {
+        content = `${data}\n\nThe interaction was successful. You may want to wait for any resulting page changes or take a screenshot to verify the result.`
+      } else if (data.includes('Browser disconnected')) {
+        content = `${data}\n\nThe browser connection has been closed. Use the 'connect' action to establish a new connection if needed.`
+      }
+
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content,
+      }
+    }
+
+    // 错误情况
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: data,
+      content: `<error>Browser action failed: ${data}</error>\n\nPossible solutions:\n- Verify the browser is connected (use 'connect' action first)\n- Check if the selector is correct (use 'snapshot' to see available elements)\n- Ensure the page has fully loaded (use 'wait' action with appropriate conditions)\n- Try taking a screenshot to see the current page state`,
     }
   },
   renderToolUse(input) {

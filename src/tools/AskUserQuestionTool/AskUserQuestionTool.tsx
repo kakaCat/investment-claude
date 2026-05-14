@@ -21,17 +21,35 @@ export const AskUserQuestionTool = buildTool({
   async call(input, context) {
     const { question, options } = input as { question: string; options: Array<{ label: string; description?: string }> }
     if (!context.askUser) {
-      return { data: `[No interactive UI available — defaulting to first option: ${options[0]?.label ?? 'none'}]` }
+      return {
+        data: {
+          question,
+          options,
+          answer: options[0]?.label ?? 'none',
+          isDefault: true,
+        }
+      }
     }
+    const answer = await context.askUser(question, options)
     return {
-      data: await context.askUser(question, options),
+      data: {
+        question,
+        options,
+        answer,
+        isDefault: false,
+      }
     }
   },
   mapToolResultToToolResultBlockParam(data, toolUseId) {
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: data,
+      content: data.isDefault
+        ? `[No interactive UI available — defaulting to first option: ${data.answer}]`
+        : data.answer,
     }
+  },
+  renderToolResultMessage(data) {
+    return <AskUserQuestionToolResultUI result={data} />
   },
 })

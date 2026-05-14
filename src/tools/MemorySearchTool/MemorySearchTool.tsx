@@ -1,4 +1,5 @@
 import React from 'react'
+import { Text } from 'ink'
 import { buildTool, type ToolUseContext } from '../../Tool.js'
 import { LocalFSBackend } from '../../memdir/backends/LocalFSBackend.js'
 import type { MemoryBackend } from '../../memdir/backends/MemoryBackend.js'
@@ -6,8 +7,19 @@ import { MemoryTypeRegistry } from '../../memdir/typeRegistry.js'
 import { formatMemoryManifest, scoreMemoryForQuery } from '../../memdir/memoryScan.js'
 import { buildMemoryAgeWarning } from '../../memdir/memoryAge.js'
 import type { MemoryFileMeta } from '../../memdir/Memory.js'
+import { MemorySearchToolResultMessageUI } from './UI.js'
 
-export const MemorySearchTool = buildTool({
+type MemorySearchResult = {
+  queryType: 'types' | 'type' | 'select' | 'search'
+  content: string
+  matches?: MemoryFileMeta[]
+  totalMatches?: number
+}
+
+export const MemorySearchTool = buildTool<
+  { query: string },
+  MemorySearchResult
+>({
   name: 'memory_search',
   description:
     'Search or browse the persistent memory system. Use "types" to see all memory type categories, "type:<name>" to list memories of a type, "search:<keywords>" to find relevant memories, "select:<filename>" to read a specific memory file.',
@@ -24,8 +36,9 @@ export const MemorySearchTool = buildTool({
     required: ['query'],
   },
   isReadOnly: () => true,
-  renderToolUse: (input) => <span>memory_search({JSON.stringify(input)})</span>,
-  renderToolResult: (result) => <span>{String(result)}</span>,
+  renderToolUse: (input) => <Text color="gray">memory_search({JSON.stringify(input)})</Text>,
+  renderToolResult: (_result) => <Text color="gray">memory_search completed</Text>,
+  renderToolResultMessage: (output) => <MemorySearchToolResultMessageUI output={output} />,
   async call(input, context) {
     const { query } = input as { query: string }
     const registry = new MemoryTypeRegistry()
@@ -47,7 +60,13 @@ export const MemorySearchTool = buildTool({
         return lines.join('\n')
       }
 
-      return { data: roots.map((root) => renderNode(root.name)).filter(Boolean).join('\n') }
+      const content = roots.map((root) => renderNode(root.name)).filter(Boolean).join('\n')
+      return {
+        data: {
+          queryType: 'types',
+          content,
+        },
+      }
     }
 
     const typeMatch = query.match(/^type:(.+)$/i)
@@ -59,19 +78,33 @@ export const MemorySearchTool = buildTool({
       const filtered = metas.filter((meta) => subtree.includes(meta.type))
 
       if (filtered.length === 0) {
-        return { data: `No memories found for type "${typeName}".` }
+        return {
+          data: {
+            queryType: 'type',
+            content: `No memories found for type "${typeName}".`,
+            matches: [],
+            totalMatches: 0,
+          },
+        }
       }
 
       const manifestLines = formatMemoryManifest(filtered).split('\n')
+      const content = filtered
+        .map((meta, index) => {
+          const handler = registry.getHandler(meta.type)
+          const ageWarn = buildMemoryAgeWarning(meta.mtimeMs, handler)
+          const line = manifestLines[index] ?? ''
+          return ageWarn ? `${line}\n  ${ageWarn}` : line
+        })
+        .join('\n')
+
       return {
-        data: filtered
-          .map((meta, index) => {
-            const handler = registry.getHandler(meta.type)
-            const ageWarn = buildMemoryAgeWarning(meta.mtimeMs, handler)
-            const line = manifestLines[index] ?? ''
-            return ageWarn ? `${line}\n  ${ageWarn}` : line
-          })
-          .join('\n'),
+        data: {
+          queryType: 'type',
+          content,
+          matches: filtered,
+          totalMatches: filtered.length,
+        },
       }
     }
 
@@ -86,13 +119,25 @@ export const MemorySearchTool = buildTool({
       )
 
       if (!found) {
-        return { data: `No memory file matching "${filename}" found.` }
+        return {
+          data: {
+            queryType: 'select',
+            content: `No memory file matching "${filename}" found.`,
+          },
+        }
       }
 
       const content = await backend.readFile(found.filePath)
       const handler = registry.getHandler(found.type)
       const ageWarn = buildMemoryAgeWarning(found.mtimeMs, handler)
-      return { data: ageWarn ? `${content}\n\n${ageWarn}` : content }
+      return {
+        data: {
+          queryType: 'select',
+          content: ageWarn ? `${content}\n\n${ageWarn}` : content,
+          matches: [found],
+          totalMatches: 1,
+        },
+      }
     }
 
     const searchMatch = query.match(/^search:(.+)$/i)
@@ -114,7 +159,14 @@ export const MemorySearchTool = buildTool({
       .slice(0, 5)
 
     if (scored.length === 0) {
-      return { data: `No memories matched '${keywords}'.` }
+      return {
+        data: {
+          queryType: 'search',
+          content: `No memories matched '${keywords}'.`,
+          matches: [],
+          totalMatches: 0,
+        },
+      }
     }
 
     const lines = await Promise.all(
@@ -126,13 +178,20 @@ export const MemorySearchTool = buildTool({
       }),
     )
 
-    return { data: lines.join('\n\n---\n\n') }
+    return {
+      data: {
+        queryType: 'search',
+        content: lines.join('\n\n---\n\n'),
+        matches: scored.map(s => s.meta),
+        totalMatches: scored.length,
+      },
+    }
   },
   mapToolResultToToolResultBlockParam(output, toolUseId) {
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: output,
+      content: output.content,
     }
   },
 })

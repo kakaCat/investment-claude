@@ -4,11 +4,25 @@ import React from 'react'
 import { buildTool } from '../../Tool.js'
 import { loadAgents } from '../../agents/loadAgents.js'
 import { runSubAgent } from './runSubAgent.js'
-import { DESCRIPTION, SEARCH_HINT } from './prompt.js'
-import { AgentToolUseUI, AgentToolResultUI } from './UI.js'
+import { getPrompt, SEARCH_HINT } from './prompt.js'
+import { AgentToolUseUI, AgentToolResultUI, AgentToolResultMessageUI } from './UI.js'
 
-export const AgentTool = buildTool({
-  name: 'agent',
+type AgentResult = {
+  success: boolean
+  output: string
+  agentType: string
+  error?: string
+}
+
+// Generate static description with empty agent list
+// TODO: Upgrade Tool framework to support dynamic description generation
+const DESCRIPTION = getPrompt([])
+
+export const AgentTool = buildTool<
+  { description: string; prompt: string; subagent_type?: string },
+  AgentResult
+>({
+  name: 'Agent',
   description: DESCRIPTION,
   searchHint: SEARCH_HINT,
   inputSchema: {
@@ -41,6 +55,7 @@ export const AgentTool = buildTool({
     <AgentToolUseUI input={input as { description: string; subagent_type?: string }} />
   ),
   renderToolResult: (result) => <AgentToolResultUI result={result} />,
+  renderToolResultMessage: (output) => <AgentToolResultMessageUI output={output} />,
   async call(input, context) {
     const { prompt, subagent_type } =
       input as { prompt: string; description: string; subagent_type?: string }
@@ -51,26 +66,46 @@ export const AgentTool = buildTool({
 
     if (!agentDef) {
       const available = agents.map(a => a.agentType).join(', ')
-      return { data: `ERROR: Unknown agent type '${type}'. Available: ${available}` }
+      return {
+        data: {
+          success: false,
+          output: '',
+          agentType: type,
+          error: `Unknown agent type '${type}'. Available: ${available}`,
+        },
+      }
     }
 
     // TODO(background): if run_in_background === true, wrap in async task
     // TODO(fork): if !subagent_type && forkGateEnabled, use buildForkedMessages
     // TODO(worktree): if isolation === 'worktree', createAgentWorktree first
 
+    const output = await runSubAgent(agentDef, prompt, {
+      allTools: context.tools,
+      abortSignal: context.abortSignal,
+      cwd: context.cwd,
+    })
+
     return {
-      data: await runSubAgent(agentDef, prompt, {
-        allTools: context.tools,
-        abortSignal: context.abortSignal,
-        cwd: context.cwd,
-      }),
+      data: {
+        success: true,
+        output,
+        agentType: type,
+      },
     }
   },
   mapToolResultToToolResultBlockParam(output, toolUseId) {
+    if (!output.success) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `ERROR: ${output.error}`,
+      }
+    }
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: output,
+      content: output.output,
     }
   },
 })

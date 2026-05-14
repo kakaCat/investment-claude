@@ -51,6 +51,30 @@ export const VerifyPlanExecutionTool = buildTool({
     }
   },
   mapToolResultToToolResultBlockParam(data, toolUseId) {
+    if (data.includes('not available in this context')) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `${data}\n\nThis tool is only available when executing an approved plan. Use it after implementing plan steps to verify correctness.`,
+      }
+    }
+
+    if (data.includes('verified')) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `✓ ${data}\n\nYour implementation has been verified against the approved plan. You can proceed with confidence.`,
+      }
+    }
+
+    if (data.includes('rejected')) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `✗ ${data}\n\nReview the plan and your implementation to identify discrepancies. Common issues:\n- Missing planned features\n- Different approach than planned\n- Incomplete implementation\n- Additional unplanned changes`,
+      }
+    }
+
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,

@@ -24,10 +24,19 @@ export const CronDeleteTool = buildTool({
     return { data: `Cancelled job ${id}.` }
   },
   mapToolResultToToolResultBlockParam(output, toolUseId) {
+    if (output.startsWith('ERROR:')) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `<error>${output}</error>\n\nThe job ID was not found. Use cron_list to see all scheduled jobs and their IDs.`,
+        is_error: true,
+      }
+    }
+
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: output,
+      content: `${output}\n\nThe scheduled task has been removed and will no longer execute.`,
     }
   },
 })

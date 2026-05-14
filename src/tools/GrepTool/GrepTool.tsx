@@ -8,6 +8,20 @@ import { GrepToolUseUI, GrepToolResultUI } from './UI.js'
 
 const MAX_RESULTS = 100
 
+type GrepMatch = {
+  file: string
+  line: number
+  content: string
+}
+
+type GrepResult = {
+  matches: GrepMatch[]
+  totalMatches: number
+  totalFiles: number
+  pattern: string
+  truncated: boolean
+}
+
 export const GrepTool = buildTool({
   name: 'grep',
   description: DESCRIPTION,
@@ -27,6 +41,15 @@ export const GrepTool = buildTool({
     <GrepToolUseUI input={input as { pattern: string; path?: string; glob?: string }} />
   ),
   renderToolResult: (result) => <GrepToolResultUI result={result} />,
+  renderToolResultMessage: (output: GrepResult) => (
+    <GrepToolResultUI
+      matches={output.matches}
+      totalMatches={output.totalMatches}
+      totalFiles={output.totalFiles}
+      pattern={output.pattern}
+      truncated={output.truncated}
+    />
+  ),
   async call(input, context) {
     const { pattern, path, glob = '**/*' } = input as {
       pattern: string
@@ -39,7 +62,13 @@ export const GrepTool = buildTool({
       regex = new RegExp(pattern)
     } catch {
       return {
-        data: `Error: invalid regex "${pattern}"`,
+        data: {
+          matches: [],
+          totalMatches: 0,
+          totalFiles: 0,
+          pattern,
+          truncated: false,
+        },
       }
     }
 
@@ -53,16 +82,23 @@ export const GrepTool = buildTool({
         absolute: true,
       })
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
       return {
-        data: `Error listing files: ${msg}`,
+        data: {
+          matches: [],
+          totalMatches: 0,
+          totalFiles: 0,
+          pattern,
+          truncated: false,
+        },
       }
     }
 
-    const results: string[] = []
+    const matches: GrepMatch[] = []
+    const filesWithMatches = new Set<string>()
+
     for (const file of files) {
       if (context.abortSignal.aborted) break
-      if (results.length >= MAX_RESULTS) break
+      if (matches.length >= MAX_RESULTS) break
       let content: string
       try {
         content = await readFile(file, 'utf-8')
@@ -73,27 +109,47 @@ export const GrepTool = buildTool({
       for (let i = 0; i < lines.length; i++) {
         if (regex.test(lines[i])) {
           const rel = relative(searchDir, file)
-          results.push(`${rel}:${i + 1}: ${lines[i].trim()}`)
-          if (results.length >= MAX_RESULTS) break
+          matches.push({
+            file: rel,
+            line: i + 1,
+            content: lines[i].trim(),
+          })
+          filesWithMatches.add(rel)
+          if (matches.length >= MAX_RESULTS) break
         }
       }
     }
 
-    if (results.length === 0) {
-      return {
-        data: `No matches for /${pattern}/`,
-      }
-    }
-    const suffix = results.length >= MAX_RESULTS ? `\n[...limited to ${MAX_RESULTS} results]` : ''
     return {
-      data: results.join('\n') + suffix,
+      data: {
+        matches,
+        totalMatches: matches.length,
+        totalFiles: filesWithMatches.size,
+        pattern,
+        truncated: matches.length >= MAX_RESULTS,
+      },
     }
   },
-  mapToolResultToToolResultBlockParam(data, toolUseId) {
+  mapToolResultToToolResultBlockParam(data: GrepResult, toolUseId) {
+    if (data.totalMatches === 0) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `No matches found for pattern: /${data.pattern}/\n\nTip: If you expected matches, try:\n- Using a simpler or more general pattern\n- Checking if the pattern is case-sensitive (use (?i) for case-insensitive)\n- Verifying you're searching in the correct directory\n- Using the Glob tool first to verify files exist`,
+      }
+    }
+
+    const lines = data.matches.map(m => `${m.file}:${m.line}: ${m.content}`)
+    let result = `Found ${data.totalMatches} match${data.totalMatches === 1 ? '' : 'es'} in ${data.totalFiles} file${data.totalFiles === 1 ? '' : 's'}:\n\n${lines.join('\n')}`
+
+    if (data.truncated) {
+      result += `\n\n<warning>Results limited to ${MAX_RESULTS} matches. There may be more matches not shown. Consider refining your search pattern to be more specific.</warning>`
+    }
+
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: data,
+      content: result,
     }
   },
 })
