@@ -15,9 +15,31 @@ export function useDashboardData() {
       const content = await fs.readFile('.pi/portfolio.json', 'utf-8')
       const data = JSON.parse(content)
 
+      // 适配实际数据结构：symbol -> code, avg_cost -> cost/currentPrice
+      // TODO: 集成实时价格API后替换 currentPrice 的计算
+      const holdings = data.holdings.map((h: any) => {
+        const cost = h.avg_cost
+        const currentPrice = h.avg_cost // TODO: 替换为实时价格
+        const marketValue = h.quantity * currentPrice
+        const totalCost = h.quantity * cost
+        const profit = marketValue - totalCost
+        const profitRate = totalCost > 0 ? (profit / totalCost) * 100 : 0
+
+        return {
+          code: h.symbol,
+          name: h.name,
+          quantity: h.quantity,
+          cost,
+          currentPrice,
+          marketValue,
+          profit,
+          profitRate,
+        }
+      })
+
       // 计算总市值和总盈亏
-      const totalValue = data.holdings.reduce((sum: number, h: any) => sum + h.marketValue, 0)
-      const totalCost = data.holdings.reduce((sum: number, h: any) => sum + h.cost * h.quantity, 0)
+      const totalValue = holdings.reduce((sum: number, h: any) => sum + h.marketValue, 0)
+      const totalCost = holdings.reduce((sum: number, h: any) => sum + h.cost * h.quantity, 0)
       const totalProfit = totalValue - totalCost
       const profitRate = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0
 
@@ -25,7 +47,7 @@ export function useDashboardData() {
         totalValue,
         totalProfit,
         profitRate,
-        holdings: data.holdings,
+        holdings,
       })
     } catch (error) {
       console.error('Failed to load portfolio:', error)
@@ -37,7 +59,7 @@ export function useDashboardData() {
     try {
       const content = await fs.readFile('.pi/decision-log.md', 'utf-8')
 
-      // 简化版解析：匹配决策标题和表格
+      // 解析决策日志：匹配 "### 决策 #N：股票名称（代码）— 决策类型"
       const decisionBlocks = content.split(/### 决策 #\d+：/)
       const parsedDecisions: Decision[] = []
 
@@ -45,7 +67,8 @@ export function useDashboardData() {
         const lines = block.split('\n')
         const titleLine = lines[0] // "股票名称（代码）— 决策类型"
 
-        const match = titleLine.match(/(.+?)（(.+?)）— (.+)/)
+        // 匹配格式：名称（代码）— 决策 或 名称（代码）— ✅/❌/⏸️ 决策
+        const match = titleLine.match(/(.+?)（(.+?)）— (?:[✅❌⏸️]\s*)?(.+)/)
         if (!match) continue
 
         const [, name, code, decisionType] = match
@@ -57,12 +80,14 @@ export function useDashboardData() {
 
         if (!timeMatch || !reasonMatch) continue
 
-        const [date, time] = timeMatch[1].split(' ')
+        const timeStr = timeMatch[1].trim()
+        const [date, time] = timeStr.split(' ')
 
         let type: Decision['type'] = 'hold'
         if (decisionType.includes('买入') || decisionType.includes('加仓')) type = 'buy'
         else if (decisionType.includes('卖出')) type = 'sell'
         else if (decisionType.includes('回避')) type = 'avoid'
+        else if (decisionType.includes('持有')) type = 'hold'
 
         parsedDecisions.push({
           date,
@@ -86,7 +111,18 @@ export function useDashboardData() {
     try {
       const content = await fs.readFile('.pi/watchlist.json', 'utf-8')
       const data = JSON.parse(content)
-      setWatchlist(data.stocks || [])
+
+      // 适配实际数据结构：data.items -> data.stocks
+      // TODO: 集成实时价格API后添加 price, change, changeRate
+      const stocks = (data.items || []).map((item: any) => ({
+        code: item.symbol,
+        name: item.name,
+        price: 0, // TODO: 替换为实时价格
+        change: 0, // TODO: 替换为实时涨跌额
+        changeRate: 0, // TODO: 替换为实时涨跌幅
+      }))
+
+      setWatchlist(stocks)
     } catch (error) {
       console.error('Failed to load watchlist:', error)
       setWatchlist([])
