@@ -4,7 +4,7 @@ import { generateReport } from '../observability/htmlReport.js'
 
 registerCommand({
   name: 'report',
-  description: 'Generate HTML report for current session log',
+  description: '📄 生成 HTML 报告 — 导出当前会话日志',
   async call(_args, ctx) {
     ctx.history.appendUserMessage('/report')
     const jsonlPath = getLogFilePath()

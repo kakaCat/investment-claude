@@ -2,7 +2,7 @@ import { registerCommand } from './index.js'
 
 registerCommand({
   name: 'compact',
-  description: 'Compress conversation to save tokens. Optional: /compact [instructions]',
+  description: '🗜️  压缩对话 — 释放上下文空间。可选参数: /compact [指令]',
   async call(args, ctx) {
     // /compact partial — 进入部分压缩选择模式
     if (args.trim() === 'partial') {

@@ -3,7 +3,7 @@ import { runDream } from '../dream/index.js'
 
 registerCommand({
   name: 'dream',
-  description: 'Consolidate session memory fragments into long-term memory',
+  description: '💤 整理记忆 — 将对话中的重要信息写入长期记忆',
   async call(_args, ctx) {
     ctx.history.appendUserMessage('/dream')
 
