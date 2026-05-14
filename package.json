@@ -7,6 +7,7 @@
   },
   "scripts": {
     "dev": "tsx src/entrypoints/cli.tsx",
+    "dashboard": "tsx src/entrypoints/dashboard.tsx",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -14,8 +15,12 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
     "@larksuite/oapi-sdk-nodejs": "npm:@larksuiteoapi/node-sdk@^1.60.0",
+    "ajv": "^8.18.0",
+    "domhandler": "^6.0.1",
+    "domutils": "^4.0.2",
     "fast-glob": "^3.3.3",
     "fuse.js": "^7.2.0",
+    "htmlparser2": "^12.0.0",
     "ink": "^5.0.1",
     "playwright": "^1.59.1",
     "proper-lockfile": "^4.1.2",
