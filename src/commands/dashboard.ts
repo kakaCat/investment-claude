@@ -1,4 +1,4 @@
-import fs from 'fs/promises'
+import { readFile } from 'fs/promises'
 import { registerCommand } from './index.js'
 
 function fmtMoney(n: number): string {
@@ -17,7 +17,7 @@ const C = { r: '\x1b[0m', g: '\x1b[32m', red: '\x1b[31m', y: '\x1b[33m', c: '\x1
 
 async function loadPortfolio() {
   try {
-    const raw = await fs.readFile('.pi/portfolio.json', 'utf-8')
+    const raw = await readFile('.pi/portfolio.json', 'utf-8')
     const data = JSON.parse(raw)
     const holdings = data.holdings || []
     let totalValue = 0
@@ -41,7 +41,7 @@ async function loadPortfolio() {
 
 async function loadDecisions() {
   try {
-    const content = await fs.readFile('.pi/decision-log.md', 'utf-8')
+    const content = await readFile('.pi/decision-log.md', 'utf-8')
     const blocks = content.split(/### 决策 #\d+：/)
     const decisions: any[] = []
     for (const block of blocks.slice(1)) {
@@ -64,7 +64,7 @@ async function loadDecisions() {
 
 async function loadWatchlist() {
   try {
-    const raw = await fs.readFile('.pi/watchlist.json', 'utf-8')
+    const raw = await readFile('.pi/watchlist.json', 'utf-8')
     const data = JSON.parse(raw)
     return (data.items || []).slice(0, 5).map((s: any) => ({
       code: s.symbol, name: s.name, price: 0, changeRate: 0,
