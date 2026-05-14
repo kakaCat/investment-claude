@@ -141,6 +141,28 @@ describe('Dashboard data loading', () => {
     // Create test decision log matching actual format
     const decisionLog = `# 决策日志
 
+## 2026-05-13
+
+### 决策 #1：腾讯（00700）— ✅ 买入
+
+| 项目 | 内容 |
+|------|------|
+| **时间** | 2026-05-13 21:54 |
+| **价格** | ¥462.60 |
+| **决策** | ✅ 买入 |
+| **理由** | 加仓拉低成本 |
+| **待验证** | 7天后检查走势 |
+
+### 决策 #2：中粮糖业（600737）— ❌ 回避
+
+| 项目 | 内容 |
+|------|------|
+| **时间** | 2026-05-13 21:51 |
+| **价格** | ¥15.99 |
+| **决策** | ❌ 回避 |
+| **理由** | PE 92%分位太贵 |
+| **待验证** | 7天后检查走势 |
+
 ## 2026-05-14
 
 ### 决策 #1：小米集团（01810）— ⏸️ 持有
@@ -162,6 +184,16 @@ describe('Dashboard data loading', () => {
 | **决策** | ✅ 加仓 |
 | **理由** | PE 18.13倍处于5年5.83%分位 |
 | **待验证** | 7天后检查走势 |
+
+### 决策 #3：腾讯控股（00700）— 🔴 卖出
+
+| 项目 | 内容 |
+|------|------|
+| **时间** | 2026-05-14 20:30 |
+| **价格** | HK$459.80 |
+| **决策** | 🔴 卖出 |
+| **理由** | 止损离场 |
+| **待验证** | 7天后检查走势 |
 `
 
     await fs.writeFile(path.join(testDir, 'decision-log.md'), decisionLog)
@@ -177,7 +209,7 @@ describe('Dashboard data loading', () => {
       const lines = block.split('\n')
       const titleLine = lines[0]
 
-      const match = titleLine.match(/(.+?)（(.+?)）— (?:[✅❌⏸️]\s*)?(.+)/)
+      const match = titleLine.match(/(.+?)（(.+?)）— (?:[✅❌⏸️🔴]\s*)?(.+)/)
       if (!match) continue
 
       const [, name, code, decisionType] = match
@@ -197,6 +229,19 @@ describe('Dashboard data loading', () => {
       else if (decisionType.includes('回避')) type = 'avoid'
       else if (decisionType.includes('持有')) type = 'hold'
 
+      // 解析待验证日期："7天后检查走势" -> 计算实际日期
+      let verifyDate: string | undefined
+      if (verifyMatch) {
+        const verifyText = verifyMatch[1].trim()
+        const daysMatch = verifyText.match(/(\d+)天后/)
+        if (daysMatch && date) {
+          const days = parseInt(daysMatch[1], 10)
+          const baseDate = new Date(date)
+          baseDate.setDate(baseDate.getDate() + days)
+          verifyDate = baseDate.toISOString().split('T')[0]
+        }
+      }
+
       parsedDecisions.push({
         date,
         time: time || '',
@@ -204,20 +249,29 @@ describe('Dashboard data loading', () => {
         name: name.trim(),
         type,
         reason: reasonMatch[1].trim(),
-        verifyDate: verifyMatch ? verifyMatch[1].split('后')[0] : undefined,
+        verifyDate,
       })
     }
 
-    // Verify parsing
-    expect(parsedDecisions).toHaveLength(2)
+    // 按时间倒序排序（最新的在前）
+    parsedDecisions.sort((a, b) => {
+      const dateTimeA = `${a.date} ${a.time}`
+      const dateTimeB = `${b.date} ${b.time}`
+      return dateTimeB.localeCompare(dateTimeA)
+    })
 
+    // Verify parsing
+    expect(parsedDecisions).toHaveLength(5)
+
+    // 验证排序：最新的决策在前
     expect(parsedDecisions[0]).toMatchObject({
       date: '2026-05-14',
-      time: '14:04',
-      code: '01810',
-      name: '小米集团',
-      type: 'hold',
-      reason: '港股财务数据全部不可用',
+      time: '20:30',
+      code: '00700',
+      name: '腾讯控股',
+      type: 'sell',
+      reason: '止损离场',
+      verifyDate: '2026-05-21',
     })
 
     expect(parsedDecisions[1]).toMatchObject({
@@ -227,6 +281,37 @@ describe('Dashboard data loading', () => {
       name: '青岛啤酒',
       type: 'buy',
       reason: 'PE 18.13倍处于5年5.83%分位',
+      verifyDate: '2026-05-21',
+    })
+
+    expect(parsedDecisions[2]).toMatchObject({
+      date: '2026-05-14',
+      time: '14:04',
+      code: '01810',
+      name: '小米集团',
+      type: 'hold',
+      reason: '港股财务数据全部不可用',
+      verifyDate: '2026-05-21',
+    })
+
+    expect(parsedDecisions[3]).toMatchObject({
+      date: '2026-05-13',
+      time: '21:54',
+      code: '00700',
+      name: '腾讯',
+      type: 'buy',
+      reason: '加仓拉低成本',
+      verifyDate: '2026-05-20',
+    })
+
+    expect(parsedDecisions[4]).toMatchObject({
+      date: '2026-05-13',
+      time: '21:51',
+      code: '600737',
+      name: '中粮糖业',
+      type: 'avoid',
+      reason: 'PE 92%分位太贵',
+      verifyDate: '2026-05-20',
     })
   })
 })

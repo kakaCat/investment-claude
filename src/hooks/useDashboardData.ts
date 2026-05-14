@@ -67,13 +67,13 @@ export function useDashboardData() {
         const lines = block.split('\n')
         const titleLine = lines[0] // "股票名称（代码）— 决策类型"
 
-        // 匹配格式：名称（代码）— 决策 或 名称（代码）— ✅/❌/⏸️ 决策
-        const match = titleLine.match(/(.+?)（(.+?)）— (?:[✅❌⏸️]\s*)?(.+)/)
+        // 匹配格式：名称（代码）— 决策 或 名称（代码）— ✅/❌/⏸️/🔴 决策
+        const match = titleLine.match(/(.+?)（(.+?)）— (?:[✅❌⏸️🔴]\s*)?(.+)/)
         if (!match) continue
 
         const [, name, code, decisionType] = match
 
-        // 提取表格中的时间和理由
+        // 从表格中提取字段
         const timeMatch = block.match(/\| \*\*时间\*\* \| (.+?) \|/)
         const reasonMatch = block.match(/\| \*\*理由\*\* \| (.+?) \|/)
         const verifyMatch = block.match(/\| \*\*待验证\*\* \| (.+?) \|/)
@@ -83,11 +83,25 @@ export function useDashboardData() {
         const timeStr = timeMatch[1].trim()
         const [date, time] = timeStr.split(' ')
 
+        // 决策类型映射
         let type: Decision['type'] = 'hold'
         if (decisionType.includes('买入') || decisionType.includes('加仓')) type = 'buy'
         else if (decisionType.includes('卖出')) type = 'sell'
         else if (decisionType.includes('回避')) type = 'avoid'
         else if (decisionType.includes('持有')) type = 'hold'
+
+        // 解析待验证日期："7天后检查走势" -> 计算实际日期
+        let verifyDate: string | undefined
+        if (verifyMatch) {
+          const verifyText = verifyMatch[1].trim()
+          const daysMatch = verifyText.match(/(\d+)天后/)
+          if (daysMatch && date) {
+            const days = parseInt(daysMatch[1], 10)
+            const baseDate = new Date(date)
+            baseDate.setDate(baseDate.getDate() + days)
+            verifyDate = baseDate.toISOString().split('T')[0]
+          }
+        }
 
         parsedDecisions.push({
           date,
@@ -96,9 +110,16 @@ export function useDashboardData() {
           name: name.trim(),
           type,
           reason: reasonMatch[1].trim(),
-          verifyDate: verifyMatch ? verifyMatch[1].split('后')[0] : undefined,
+          verifyDate,
         })
       }
+
+      // 按时间倒序排序（最新的在前）
+      parsedDecisions.sort((a, b) => {
+        const dateTimeA = `${a.date} ${a.time}`
+        const dateTimeB = `${b.date} ${b.time}`
+        return dateTimeB.localeCompare(dateTimeA)
+      })
 
       setDecisions(parsedDecisions.slice(0, 5))
     } catch (error) {
