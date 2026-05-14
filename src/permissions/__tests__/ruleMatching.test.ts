@@ -80,6 +80,10 @@ describe('ruleMatchesToolUse', () => {
       ruleMatchesToolUse('Investment', 'Investment', 'manage_portfolio:add'),
     ).toBe(true)
   })
+
+  it('content rule does not match when contentString is absent', () => {
+    expect(ruleMatchesToolUse('Investment(manage_portfolio:add)', 'Investment')).toBe(false)
+  })
 })
 
 describe('findMatchingRule', () => {

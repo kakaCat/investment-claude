@@ -47,20 +47,18 @@ export function ruleValueFromString(ruleString: string): PermissionRuleValue {
 }
 
 /**
- * Check if a rule string matches a specific tool use.
+ * Check if a pre-parsed rule matches a specific tool use.
  *
  * Matching rules:
  * - 'ToolName' matches any use of that tool
  * - 'ToolName(exact:content)' matches only that exact content
  * - 'ToolName(prefix:*)' matches any content starting with 'prefix:'
  */
-export function ruleMatchesToolUse(
-  ruleString: string,
+function ruleMatchesParsed(
+  rule: PermissionRuleValue,
   toolName: string,
   contentString?: string,
 ): boolean {
-  const rule = ruleValueFromString(ruleString)
-
   // Tool name must match
   if (rule.toolName !== toolName) {
     return false
@@ -87,6 +85,22 @@ export function ruleMatchesToolUse(
 }
 
 /**
+ * Check if a rule string matches a specific tool use.
+ *
+ * Matching rules:
+ * - 'ToolName' matches any use of that tool
+ * - 'ToolName(exact:content)' matches only that exact content
+ * - 'ToolName(prefix:*)' matches any content starting with 'prefix:'
+ */
+export function ruleMatchesToolUse(
+  ruleString: string,
+  toolName: string,
+  contentString?: string,
+): boolean {
+  return ruleMatchesParsed(ruleValueFromString(ruleString), toolName, contentString)
+}
+
+/**
  * Find the first rule that matches the given tool use across all sources.
  * Sources are checked in order: userSettings -> projectSettings -> session.
  */
@@ -98,11 +112,12 @@ export function findMatchingRule(
   for (const source of RULE_SOURCES) {
     const sourceRules = rules[source]
     for (const ruleString of sourceRules) {
-      if (ruleMatchesToolUse(ruleString, toolName, contentString)) {
+      const value = ruleValueFromString(ruleString)
+      if (ruleMatchesParsed(value, toolName, contentString)) {
         return {
           source,
           behavior: 'allow', // caller knows which behavior bucket this came from
-          value: ruleValueFromString(ruleString),
+          value,
         }
       }
     }
