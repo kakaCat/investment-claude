@@ -119,6 +119,13 @@ export interface Tool<Input = unknown, Output = unknown> {
   isReadOnly(): boolean
 
   /**
+   * Tool-level permission check (optional).
+   * Return 'allow' to auto-permit, 'deny' to block, 'ask' to prompt the user.
+   * Default implementation in buildTool: readOnly → allow, otherwise → ask.
+   */
+  checkPermissions?(input: Input): import('./permissions/types.js').PermissionDecision
+
+  /**
    * 执行工具，返回结构化数据。
    *
    * 职责：
@@ -162,8 +169,32 @@ export interface Tool<Input = unknown, Output = unknown> {
 
   /** 工具调用时展示的 Ink UI */
   renderToolUse(input: unknown): React.ReactNode
-  /** 工具结果展示的 Ink UI */
+
+  /**
+   * 工具结果展示的 Ink UI（旧方法，保留作为 fallback）
+   *
+   * 接收字符串格式的结果。如果工具实现了 renderToolResultMessage，
+   * UI 会优先使用新方法。
+   */
   renderToolResult(result: string): React.ReactNode
+
+  /**
+   * 工具结果展示的 Ink UI（新方法，推荐使用）
+   *
+   * 接收结构化的 Output 数据，可以提供更丰富的渲染效果。
+   * 对标 Claude Code 的 renderToolResultMessage 方法。
+   *
+   * 如果返回 null，工具结果不会在 UI 中渲染（例如 TodoWriteTool）。
+   */
+  renderToolResultMessage?(
+    output: Output,
+    options: {
+      style?: 'condensed'
+      tools: Tool[]
+      verbose: boolean
+      input?: unknown  // 原始 tool_use input，用于上下文相关的渲染
+    }
+  ): React.ReactNode
 }
 
 /**
@@ -205,6 +236,11 @@ export function buildTool<Input = unknown, Output = unknown>(
     maxResultSizeChars: 50_000,
     renderToolUse: (input) => defaultRenderToolUse(def.name, input),
     renderToolResult: (result) => defaultRenderToolResult(result),
+    checkPermissions: (_input: Input) => {
+      const isRO = def.isReadOnly?.() ?? false
+      if (isRO) return { behavior: 'allow' as const }
+      return { behavior: 'ask' as const, message: `确认使用 ${def.name}？` }
+    },
     ...def,
   }
 }
