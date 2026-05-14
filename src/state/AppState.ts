@@ -4,6 +4,8 @@
 // Claude Code 的完整字段见注释，按需逐步添加。
 
 import type { TodoItem, Task } from '../tasks/types.js'
+import type { ToolPermissionContext } from '../permissions/types.js'
+import { createEmptyPermissionContext } from '../permissions/types.js'
 
 export type AppState = {
   // ── 当前已实现 ────────────────────────────────────────────────────────────
@@ -16,6 +18,9 @@ export type AppState = {
 
   /** Task 自增 ID 计数器 */
   readonly nextTaskId: number
+
+  /** Permission rules and mode — loaded from settings.json */
+  readonly permissionContext: ToolPermissionContext
 
   // ── 以下字段对标 Claude Code，暂未实现 ──────────────────────────────────────
 
@@ -44,6 +49,7 @@ let _state: AppState = {
   todos: [],
   tasks: new Map<number, Task>() as ReadonlyMap<number, Task>,
   nextTaskId: 1,
+  permissionContext: createEmptyPermissionContext(),
 }
 
 /** 读取当前 AppState 快照 */
