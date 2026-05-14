@@ -94,8 +94,8 @@ function calcAlerts(portfolio: any, decisions: any[]) {
 
 registerCommand({
   name: 'dashboard',
-  aliases: ['dash', 'db'],
-  description: 'Show investment dashboard with portfolio, decisions, market, and alerts',
+  aliases: ['dash', 'db', '仪表盘'],
+  description: '📊 投资仪表盘 — 显示持仓、决策日志、自选股、风险提示',
   async call(_args, ctx) {
     ctx.history.appendUserMessage('/dashboard')
 
