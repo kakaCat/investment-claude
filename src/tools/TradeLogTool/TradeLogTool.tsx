@@ -1,5 +1,8 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs'
 import { join } from 'path'
+import { buildTool, type ToolResult, type ToolUseContext } from '../../Tool.js'
+import { TRADE_LOG_TOOL_DESCRIPTION } from './prompt.js'
+import type { PermissionDecision } from '../../permissions/types.js'
 
 interface TradeLog {
   log_id: string
@@ -212,5 +215,130 @@ function handleList(): TradeLogOutput {
     }
   }
 }
+
+// ── Tool Integration Layer ──────────────────────────────────────────────────
+
+async function execute(
+  input: TradeLogInput,
+  context: ToolUseContext,
+): Promise<ToolResult<TradeLogOutput>> {
+  const { action } = input
+
+  let result: TradeLogOutput
+
+  switch (action) {
+    case 'create':
+      result = handleCreate(input)
+      break
+    case 'append':
+      result = handleAppend(input)
+      break
+    case 'get':
+      result = handleGet(input)
+      break
+    case 'list':
+      result = handleList()
+      break
+    default:
+      result = {
+        success: false,
+        error: `Unknown action: ${action}`,
+      }
+  }
+
+  return { data: result }
+}
+
+function checkPermission(input: TradeLogInput): PermissionDecision {
+  const { action } = input
+
+  // Write operations require user confirmation
+  if (action === 'create') {
+    const { symbol, name, entry_price } = input
+    return {
+      behavior: 'ask',
+      message: `Create trade log for ${name} (${symbol}) at entry price ${entry_price}?`,
+    }
+  }
+
+  if (action === 'append') {
+    const { log_id, record } = input
+    return {
+      behavior: 'ask',
+      message: `Append record to trade log ${log_id}: ${record?.event}?`,
+    }
+  }
+
+  // Read operations auto-approve
+  return { behavior: 'allow' }
+}
+
+// ── Tool Definition ─────────────────────────────────────────────────────────
+
+export const TradeLogTool = buildTool({
+  name: 'trade_log',
+  description: TRADE_LOG_TOOL_DESCRIPTION,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      action: {
+        type: 'string',
+        enum: ['create', 'append', 'get', 'list'],
+        description: 'Action to perform',
+      },
+      symbol: {
+        type: 'string',
+        description: 'Stock symbol (required for create)',
+      },
+      name: {
+        type: 'string',
+        description: 'Stock name (required for create)',
+      },
+      entry_price: {
+        type: 'number',
+        description: 'Entry price (required for create)',
+      },
+      entry_date: {
+        type: 'string',
+        description: 'Entry date in YYYY-MM-DD format (required for create)',
+      },
+      notes: {
+        type: 'string',
+        description: 'Initial notes (optional for create)',
+      },
+      log_id: {
+        type: 'string',
+        description: 'Trade log ID (required for append/get)',
+      },
+      record: {
+        type: 'object',
+        description: 'Record to append (required for append)',
+        properties: {
+          date: {
+            type: 'string',
+            description: 'Record date in YYYY-MM-DD format',
+          },
+          event: {
+            type: 'string',
+            description: 'Event description',
+          },
+          price: {
+            type: 'number',
+            description: 'Price at event time (optional)',
+          },
+          notes: {
+            type: 'string',
+            description: 'Additional notes (optional)',
+          },
+        },
+        required: ['date', 'event'],
+      },
+    },
+    required: ['action'],
+  },
+  isReadOnly: () => false,
+  checkPermissions: checkPermission,
+  call: execute,
+})
 
 export { handleCreate, handleAppend, handleGet, handleList }
