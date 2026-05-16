@@ -12,3 +12,6 @@ dist/
 .pi/logs/
 .pi/sessions/
 data/
+
+# Restart context (runtime state)
+.restart/
