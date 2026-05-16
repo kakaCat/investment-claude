@@ -457,10 +457,54 @@ export const TradeLogTool = buildTool({
   call: execute,
   mapToolResultToToolResultBlockParam(output, toolUseId) {
     if (!output.success) {
+      const error = output.error || '未知错误'
+
+      // 根据错误类型提供不同的反馈和建议
+      let content = `❌ 交易日志操作失败\n\n`
+      content += `错误信息: ${error}\n\n`
+
+      // 缺少必填字段
+      if (error.includes('Missing required fields')) {
+        content += `💡 解决方案:\n`
+        if (error.includes('symbol, name, entry_price, entry_date')) {
+          content += `• 创建日志需要提供: symbol（股票代码）、name（股票名称）、entry_price（建仓价格）、entry_date（建仓日期）\n`
+          content += `• 示例: { "action": "create", "symbol": "600519", "name": "贵州茅台", "entry_price": 1650.00, "entry_date": "2026-05-16" }\n`
+        } else if (error.includes('log_id, record')) {
+          content += `• 追加记录需要提供: log_id（日志ID）、record（记录内容）\n`
+          content += `• 先使用 list 操作查看可用的 log_id\n`
+        }
+      }
+      // 日志不存在
+      else if (error.includes('not found')) {
+        content += `💡 解决方案:\n`
+        content += `• 使用 list 操作查看所有可用的交易日志\n`
+        content += `• 确认 log_id 是否正确（可能是拼写错误）\n`
+        content += `• 如果是新股票，使用 create 操作创建新日志\n`
+      }
+      // 日志已存在
+      else if (error.includes('already exists')) {
+        content += `💡 解决方案:\n`
+        content += `• 该股票的交易日志已存在，使用 append 操作追加记录\n`
+        content += `• 使用 get 操作查看现有日志内容\n`
+      }
+      // 记录格式错误
+      else if (error.includes('must have date and event')) {
+        content += `💡 解决方案:\n`
+        content += `• 记录必须包含 date（日期）和 event（事件）字段\n`
+        content += `• 示例: { "date": "2026-05-16", "event": "加仓", "price": 1620.00, "notes": "回调至支撑位" }\n`
+      }
+      // 文件系统错误
+      else if (error.includes('Failed to')) {
+        content += `💡 可能原因:\n`
+        content += `• 磁盘空间不足\n`
+        content += `• 文件权限问题\n`
+        content += `• 文件被其他程序占用\n`
+      }
+
       return {
         type: 'tool_result',
         tool_use_id: toolUseId,
-        content: `❌ 交易日志操作失败: ${output.error}`,
+        content,
         is_error: true,
       }
     }

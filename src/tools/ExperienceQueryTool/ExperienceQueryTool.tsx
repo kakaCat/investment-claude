@@ -328,10 +328,46 @@ export const ExperienceQueryTool = buildTool({
   call: execute,
   mapToolResultToToolResultBlockParam(output, toolUseId) {
     if (!output.success) {
+      const error = output.error || '未知错误'
+
+      let content = `❌ 经验查询失败\n\n`
+      content += `错误信息: ${error}\n\n`
+
+      // 根据错误类型提供建议
+      if (error.includes('not found') || error.includes('does not exist')) {
+        content += `💡 可能原因:\n`
+        content += `• 经验数据目录不存在（.pi/memory/）\n`
+        content += `• 尚未记录任何投资经验\n\n`
+        content += `建议:\n`
+        content += `• 开始记录每日交易心得到 .pi/memory/daily/\n`
+        content += `• 为重点关注的股票创建记忆文件到 .pi/memory/stocks/\n`
+      } else if (error.includes('Invalid category')) {
+        content += `💡 解决方案:\n`
+        content += `• 分类必须是以下之一:\n`
+        content += `  - stock_selection: 选股决策\n`
+        content += `  - timing: 择时决策\n`
+        content += `  - position_sizing: 仓位管理\n`
+        content += `  - risk_management: 风险控制\n`
+        content += `  - market_analysis: 市场分析\n`
+      } else if (error.includes('parse') || error.includes('JSON')) {
+        content += `💡 可能原因:\n`
+        content += `• 经验数据文件格式损坏\n`
+        content += `• JSONL 文件格式不正确（每行应该是独立的 JSON 对象）\n\n`
+        content += `建议:\n`
+        content += `• 检查 .pi/memory/daily/*.jsonl 文件格式\n`
+        content += `• 确保每行都是有效的 JSON\n`
+      } else if (error.includes('permission') || error.includes('EACCES')) {
+        content += `💡 可能原因:\n`
+        content += `• 文件权限不足\n`
+        content += `• 目录访问受限\n\n`
+        content += `建议:\n`
+        content += `• 检查 .pi/memory/ 目录权限\n`
+      }
+
       return {
         type: 'tool_result',
         tool_use_id: toolUseId,
-        content: `❌ 经验查询失败: ${output.error}`,
+        content,
         is_error: true,
       }
     }

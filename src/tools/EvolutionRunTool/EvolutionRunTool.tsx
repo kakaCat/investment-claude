@@ -232,10 +232,64 @@ export const EvolutionRunTool = buildTool({
   call: execute,
   mapToolResultToToolResultBlockParam(output, toolUseId) {
     if (!output.success || !output.report) {
+      const error = output.error || '未知错误'
+
+      let content = `❌ 进化分析失败\n\n`
+      content += `错误信息: ${error}\n\n`
+
+      // 根据错误类型提供建议
+      if (error.includes('No trades found') || error.includes('交易记录不足')) {
+        content += `💡 原因: 交易数据不足\n\n`
+        content += `解决方案:\n`
+        content += `• 确保已使用 TradeLogTool 记录交易\n`
+        content += `• 至少需要 5 笔交易才能进行有效分析\n`
+        content += `• 检查 .pi/trade-log/ 目录是否有交易日志\n\n`
+        content += `快速开始:\n`
+        content += `1. 使用 trade_log 工具创建交易日志\n`
+        content += `2. 记录买入、卖出等操作\n`
+        content += `3. 积累足够数据后再运行进化分析\n`
+      } else if (error.includes('Invalid period') || error.includes('period_days')) {
+        content += `💡 原因: 分析周期参数无效\n\n`
+        content += `解决方案:\n`
+        content += `• period_days 必须是正整数\n`
+        content += `• 建议值: 7（周度）、30（月度）、90（季度）\n`
+        content += `• 确保周期内有足够的交易数据\n`
+      } else if (error.includes('target_return')) {
+        content += `💡 原因: 目标收益率参数无效\n\n`
+        content += `解决方案:\n`
+        content += `• target_return 必须是正数（百分比）\n`
+        content += `• 建议根据市场环境设置:\n`
+        content += `  - 牛市: 25-35%\n`
+        content += `  - 震荡市: 15-20%\n`
+        content += `  - 熊市: 5-10%\n`
+      } else if (error.includes('not found') || error.includes('ENOENT')) {
+        content += `💡 原因: 数据文件或目录不存在\n\n`
+        content += `解决方案:\n`
+        content += `• 检查 .pi/trade-log/ 目录是否存在\n`
+        content += `• 确保已创建交易日志文件\n`
+        content += `• 使用 trade_log list 查看现有日志\n`
+      } else if (error.includes('parse') || error.includes('JSON')) {
+        content += `💡 原因: 交易日志文件格式损坏\n\n`
+        content += `解决方案:\n`
+        content += `• 检查 .pi/trade-log/*.json 文件格式\n`
+        content += `• 确保 JSON 格式正确\n`
+        content += `• 如有损坏文件，可以删除或修复\n`
+      } else if (error.includes('permission') || error.includes('EACCES')) {
+        content += `💡 原因: 文件权限不足\n\n`
+        content += `解决方案:\n`
+        content += `• 检查 .pi/ 目录权限\n`
+        content += `• 确保有读写权限\n`
+      } else if (error.includes('timeout') || error.includes('超时')) {
+        content += `💡 原因: 分析超时\n\n`
+        content += `解决方案:\n`
+        content += `• 数据量可能过大，尝试缩短分析周期\n`
+        content += `• 使用 period_days=7 进行快速分析\n`
+      }
+
       return {
         type: 'tool_result',
         tool_use_id: toolUseId,
-        content: `❌ 进化分析失败: ${output.error || '未知错误'}`,
+        content,
         is_error: true,
       }
     }
