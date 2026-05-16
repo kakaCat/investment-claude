@@ -75,7 +75,7 @@ function handleCreate(input: TradeLogInput): TradeLogOutput {
   }
 
   const dir = ensureTradeLogDir()
-  const logId = `${symbol}_${Date.now()}`
+  const logId = sanitizeLogId(`${symbol}_${Date.now()}`)
   const filePath = join(dir, `${logId}.json`)
 
   if (existsSync(filePath)) {
