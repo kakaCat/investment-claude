@@ -46,12 +46,14 @@ describe('TradeLogTool', () => {
 
       expect(result.success).toBe(true)
       expect(result.data).toBeDefined()
-      expect(result.data?.symbol).toBe('AAPL')
-      expect(result.data?.name).toBe('Apple Inc.')
-      expect(result.data?.entry_price).toBe(150.5)
-      expect(result.data?.entry_date).toBe('2024-01-15')
-      expect(result.data?.notes).toBe('Initial position')
-      expect(result.data?.records).toEqual([])
+      expect(Array.isArray(result.data)).toBe(false)
+      const log = result.data as any
+      expect(log.symbol).toBe('AAPL')
+      expect(log.name).toBe('Apple Inc.')
+      expect(log.entry_price).toBe(150.5)
+      expect(log.entry_date).toBe('2024-01-15')
+      expect(log.notes).toBe('Initial position')
+      expect(log.records).toEqual([])
       expect(fs.writeFileSync).toHaveBeenCalledOnce()
     })
 
@@ -68,7 +70,9 @@ describe('TradeLogTool', () => {
       })
 
       expect(result.success).toBe(true)
-      expect(result.data?.notes).toBe('')
+      expect(Array.isArray(result.data)).toBe(false)
+      const log = result.data as any
+      expect(log.notes).toBe('')
     })
 
     it('should fail when symbol is missing', () => {
@@ -165,7 +169,9 @@ describe('TradeLogTool', () => {
       })
 
       expect(result.success).toBe(true)
-      expect(result.data?.log_id).toMatch(/^AAPL_\d+$/)
+      expect(Array.isArray(result.data)).toBe(false)
+      const log = result.data as any
+      expect(log.log_id).toMatch(/^AAPL_\d+$/)
     })
   })
 
@@ -189,12 +195,14 @@ describe('TradeLogTool', () => {
 
       expect(result.success).toBe(true)
       expect(result.data).toBeDefined()
-      expect(result.data?.records).toHaveLength(1)
-      expect(result.data?.records[0].date).toBe('2024-01-20')
-      expect(result.data?.records[0].event).toBe('Price increase')
-      expect(result.data?.records[0].price).toBe(155.0)
-      expect(result.data?.records[0].notes).toBe('Good momentum')
-      expect(result.data?.records[0].timestamp).toBeDefined()
+      expect(Array.isArray(result.data)).toBe(false)
+      const log = result.data as any
+      expect(log.records).toHaveLength(1)
+      expect(log.records[0].date).toBe('2024-01-20')
+      expect(log.records[0].event).toBe('Price increase')
+      expect(log.records[0].price).toBe(155.0)
+      expect(log.records[0].notes).toBe('Good momentum')
+      expect(log.records[0].timestamp).toBeDefined()
       expect(fs.writeFileSync).toHaveBeenCalledOnce()
     })
 
@@ -214,8 +222,10 @@ describe('TradeLogTool', () => {
       })
 
       expect(result.success).toBe(true)
-      expect(result.data?.records[0].price).toBeUndefined()
-      expect(result.data?.records[0].notes).toBe('')
+      expect(Array.isArray(result.data)).toBe(false)
+      const log = result.data as any
+      expect(log.records[0].price).toBeUndefined()
+      expect(log.records[0].notes).toBe('')
     })
 
     it('should fail when log_id is missing', () => {
@@ -341,10 +351,12 @@ describe('TradeLogTool', () => {
       })
 
       expect(result1.success).toBe(true)
-      expect(result1.data?.records).toHaveLength(1)
+      expect(Array.isArray(result1.data)).toBe(false)
+      const log1 = result1.data as any
+      expect(log1.records).toHaveLength(1)
 
       // Second append
-      const updatedLog = { ...existingLog, records: result1.data!.records }
+      const updatedLog = { ...existingLog, records: log1.records }
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(updatedLog))
 
       const result2 = handleAppend({
@@ -357,7 +369,9 @@ describe('TradeLogTool', () => {
       })
 
       expect(result2.success).toBe(true)
-      expect(result2.data?.records).toHaveLength(2)
+      expect(Array.isArray(result2.data)).toBe(false)
+      const log2 = result2.data as any
+      expect(log2.records).toHaveLength(2)
     })
   })
 
@@ -439,8 +453,10 @@ describe('TradeLogTool', () => {
       const result = handleList()
 
       expect(result.success).toBe(true)
-      expect(result.data).toHaveLength(2)
-      expect(result.data).toEqual([log1, log2])
+      expect(Array.isArray(result.data)).toBe(true)
+      const logs = result.data as any[]
+      expect(logs).toHaveLength(2)
+      expect(logs).toEqual([log1, log2])
     })
 
     it('should return empty array when directory is empty', () => {
@@ -450,7 +466,9 @@ describe('TradeLogTool', () => {
       const result = handleList()
 
       expect(result.success).toBe(true)
-      expect(result.data).toEqual([])
+      expect(Array.isArray(result.data)).toBe(true)
+      const logs = result.data as any[]
+      expect(logs).toEqual([])
     })
 
     it('should filter out non-JSON files', () => {
@@ -467,7 +485,9 @@ describe('TradeLogTool', () => {
       const result = handleList()
 
       expect(result.success).toBe(true)
-      expect(result.data).toHaveLength(1)
+      expect(Array.isArray(result.data)).toBe(true)
+      const logs = result.data as any[]
+      expect(logs).toHaveLength(1)
       expect(fs.readFileSync).toHaveBeenCalledTimes(1)
     })
 
@@ -486,8 +506,10 @@ describe('TradeLogTool', () => {
       const result = handleList()
 
       expect(result.success).toBe(true)
-      expect(result.data).toHaveLength(1)
-      expect(result.data).toEqual([log1])
+      expect(Array.isArray(result.data)).toBe(true)
+      const logs = result.data as any[]
+      expect(logs).toHaveLength(1)
+      expect(logs).toEqual([log1])
     })
 
     it('should fail when directory read fails', () => {
