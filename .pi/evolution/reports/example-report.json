@@ -1,0 +1,114 @@
+{
+  "period": {
+    "start": "2026-05-09",
+    "end": "2026-05-16"
+  },
+  "status": "completed",
+  "current_performance": {
+    "total_return": 12.5,
+    "win_rate": 0.6,
+    "avg_profit": 3.2,
+    "max_drawdown": -8.5,
+    "sharpe_ratio": 1.45,
+    "total_trades": 10,
+    "winning_trades": 6,
+    "losing_trades": 4
+  },
+  "target_performance": {
+    "total_return": 20.0,
+    "win_rate": 0.7,
+    "avg_profit": 5.0,
+    "max_drawdown": -10.0,
+    "sharpe_ratio": 2.0
+  },
+  "gap_analysis": {
+    "performance_gap": 7.5,
+    "attribution": {
+      "stock_selection": 35,
+      "timing": 25,
+      "position_sizing": 20,
+      "risk_management": 20
+    },
+    "recommendations": [
+      "Improve stock selection criteria: Focus on stocks with PE ratios in the 20-40th percentile range rather than extreme low valuations",
+      "Enhance timing signals: Current MACD-based entries are late by 2-3 days on average. Consider adding RSI confirmation",
+      "Optimize position sizing: Winning positions averaged only 2.5% allocation vs 4% for losers. Increase conviction sizing",
+      "Tighten stop losses: Max drawdown of -8.5% exceeded target. Implement 5% trailing stops on all positions",
+      "Reduce holding period for momentum plays: Stocks held >10 days showed diminishing returns. Consider 7-day profit-taking rule",
+      "Add sector rotation filter: Technology sector underperformed by 15%. Rotate to consumer staples and healthcare",
+      "Improve entry discipline: 3 out of 4 losses came from FOMO entries above resistance. Wait for pullbacks",
+      "Enhance fundamental screening: Winners had avg PE of 18.5 vs losers at 28.3. Strengthen valuation filters"
+    ]
+  },
+  "actions_taken": [],
+  "metadata": {
+    "generated_at": "2026-05-16T09:00:00Z",
+    "analysis_version": "1.0",
+    "data_quality": "high",
+    "confidence_score": 0.85
+  },
+  "detailed_trades": [
+    {
+      "symbol": "600600",
+      "name": "青岛啤酒",
+      "entry_date": "2026-05-10",
+      "exit_date": "2026-05-15",
+      "entry_price": 62.15,
+      "exit_price": 64.80,
+      "return": 4.26,
+      "position_size": 0.08,
+      "outcome": "win",
+      "notes": "PE at 5.83% percentile, strong fundamental support"
+    },
+    {
+      "symbol": "000425",
+      "name": "徐工机械",
+      "entry_date": "2026-05-08",
+      "exit_date": "2026-05-14",
+      "entry_price": 6.78,
+      "exit_price": 10.25,
+      "return": 51.2,
+      "position_size": 0.04,
+      "outcome": "win",
+      "notes": "Exceptional momentum play, MACD golden cross"
+    },
+    {
+      "symbol": "00700",
+      "name": "腾讯控股",
+      "entry_date": "2026-05-05",
+      "exit_date": "2026-05-14",
+      "entry_price": 665.0,
+      "exit_price": 459.8,
+      "return": -30.86,
+      "position_size": 0.077,
+      "outcome": "loss",
+      "notes": "Hong Kong data unavailable, poor risk management"
+    },
+    {
+      "symbol": "600737",
+      "name": "中粮糖业",
+      "entry_date": "2026-05-12",
+      "exit_date": "2026-05-13",
+      "entry_price": 15.99,
+      "exit_price": 14.85,
+      "return": -7.13,
+      "position_size": 0.05,
+      "outcome": "loss",
+      "notes": "PE at 92% percentile too expensive, avoided further loss"
+    }
+  ],
+  "key_insights": [
+    "Best performing strategy: Low PE value plays with strong fundamentals (青岛啤酒, 徐工机械)",
+    "Worst performing strategy: High valuation momentum chasing (中粮糖业) and data-blind positions (腾讯)",
+    "Win rate of 60% is below target 70%, primarily due to poor position sizing on winners",
+    "Risk management needs improvement: Losses averaged -19% vs wins at +27.7%, but position sizing favored losers",
+    "Timing gap: Entries 2-3 days late on average, missing 15-20% of potential gains"
+  ],
+  "next_steps": [
+    "Implement recommended stop-loss tightening to 5% trailing stops",
+    "Adjust position sizing algorithm to favor high-conviction value plays",
+    "Add RSI confirmation to MACD signals to improve entry timing",
+    "Create Hong Kong stock data fallback to avoid blind positions",
+    "Review and update PE percentile thresholds based on recent performance data"
+  ]
+}

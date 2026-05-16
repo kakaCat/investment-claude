@@ -1,0 +1,30 @@
+{
+  "jobs": [
+    {
+      "id": "weekly-evolution",
+      "name": "Weekly Evolution Analysis",
+      "schedule": "0 9 * * 1",
+      "command": "evolution_run",
+      "args": {
+        "period_days": 7,
+        "target_return": 20,
+        "auto_apply": false
+      },
+      "enabled": true,
+      "description": "Run evolution analysis every Monday at 9 AM"
+    },
+    {
+      "id": "monthly-evolution",
+      "name": "Monthly Evolution Analysis",
+      "schedule": "0 10 1 * *",
+      "command": "evolution_run",
+      "args": {
+        "period_days": 30,
+        "target_return": 20,
+        "auto_apply": false
+      },
+      "enabled": true,
+      "description": "Run comprehensive monthly analysis on the 1st at 10 AM"
+    }
+  ]
+}
