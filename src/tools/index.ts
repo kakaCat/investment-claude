@@ -39,6 +39,7 @@ import { TradeLogTool } from './TradeLogTool/TradeLogTool.js'
 import { ExperienceQueryTool } from './ExperienceQueryTool/ExperienceQueryTool.js'
 import { EvolutionRunTool } from './EvolutionRunTool/EvolutionRunTool.js'
 import { SystemPromptTool } from './SystemPromptTool/SystemPromptTool.js'
+import { RestartTool } from './RestartTool/RestartTool.js'
 
 // 内置工具静态列表 — 新增工具在此 import + 加入数组
 const BUILTIN_TOOLS: Tool[] = [
@@ -51,6 +52,7 @@ const BUILTIN_TOOLS: Tool[] = [
   ExperienceQueryTool,
   EvolutionRunTool,
   SystemPromptTool,
+  RestartTool,
   BashTool,
   ReadTool,
   FileWriteTool,
