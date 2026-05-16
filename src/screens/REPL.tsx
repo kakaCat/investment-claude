@@ -107,7 +107,6 @@ export function REPL(_props: Props) {
   const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null)
   const [askUserRequest, setAskUserRequest] = useState<AskUserRequest | null>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const [permSelectedIndex, setPermSelectedIndex] = useState(0)
   const [isPlanMode, setIsPlanMode] = useState(false)
   const [planApprovalRequest, setPlanApprovalRequest] = useState<PlanApprovalRequest | null>(null)
   const [collectingPlanReason, setCollectingPlanReason] = useState(false)
@@ -171,7 +170,6 @@ export function REPL(_props: Props) {
 
       // behavior === 'ask' → show permission prompt
       const userChoice = await new Promise<PermissionUserChoice>((resolve) => {
-        setPermSelectedIndex(0)
         setPermissionRequest({
           toolName: name,
           input,
@@ -534,13 +532,35 @@ export function REPL(_props: Props) {
     return () => scheduler.stop()
   }, [])
 
+  // ── 自动展开新工具调用的输出 ────────────────────────────────────────────────
+  useEffect(() => {
+    const msgs = history.displayMessages
+    const newToolIds = new Set<string>()
+
+    for (const msg of msgs) {
+      if (msg.type === 'assistant') {
+        for (const block of msg.content) {
+          if (block.type === 'tool_use') {
+            newToolIds.add(block.id)
+          }
+        }
+      }
+    }
+
+    // 默认展开所有工具输出
+    setCollapse((prev) => ({
+      ...prev,
+      expandedToolOutputs: newToolIds,
+    }))
+  }, [history.displayMessages])
+
   // ── 键盘输入处理 ──────────────────────────────────────────────────────────
   useInput(
     (input, key) => {
       if (isPartialSelectMode) {
-          if (key.upArrow || input === 'k') {
-            setPartialSelectedIndex((i) => Math.max(0, i - 1))
-          } else if (key.downArrow || input === 'j') {
+        if (key.upArrow || input === 'k') {
+          setPartialSelectedIndex((i) => Math.max(0, i - 1))
+        } else if (key.downArrow || input === 'j') {
             setPartialSelectedIndex((i) =>
               Math.min(history.displayMessages.length - 1, i + 1),
             )
@@ -644,22 +664,10 @@ export function REPL(_props: Props) {
         return
       }
 
-      // 权限确认 (4-option prompt)
+      // 权限确认 - now handled inside PermissionPrompt component
+      // Keep this block for reference but it's no longer active
       if (permissionRequest) {
-        if (key.upArrow) {
-          setPermSelectedIndex(i => Math.max(0, i - 1))
-        } else if (key.downArrow) {
-          setPermSelectedIndex(i => Math.min(PERMISSION_OPTIONS.length - 1, i + 1))
-        } else if (key.return) {
-          const opt = PERMISSION_OPTIONS[permSelectedIndex]!
-          permissionRequest.resolve({
-            action: opt.action,
-            persist: opt.persist,
-            destination: opt.persist ? 'projectSettings' : undefined,
-          })
-        } else if (key.escape) {
-          permissionRequest.resolve({ action: 'deny', persist: false })
-        }
+        // Input handling moved to PermissionPrompt component
         return
       }
 
@@ -741,6 +749,67 @@ export function REPL(_props: Props) {
           })
           return
         }
+
+        // Ctrl+R — toggle ALL tool groups expand/collapse
+        if (key.ctrl && input === 'r') {
+          const msgs = history.displayMessages
+          const assistantIndices: number[] = []
+          for (let i = 0; i < msgs.length; i++) {
+            const msg = msgs[i]
+            if (msg.type === 'assistant') {
+              const hasTools = msg.content.some((c) => c.type === 'tool_use')
+              if (hasTools) assistantIndices.push(i)
+            }
+          }
+          // 排除最后一个（最新消息默认展开）
+          const lastAssistantIdx = msgs.length - 1 - [...msgs].reverse().findIndex(m => m.type === 'assistant')
+          const indicesToToggle = assistantIndices.filter(idx => idx !== lastAssistantIdx)
+
+          if (indicesToToggle.length === 0) return
+
+          setCollapse((prev) => {
+            const allExpanded = indicesToToggle.every(idx => prev.expandedToolGroups.has(idx))
+            const next = new Set(prev.expandedToolGroups)
+            if (allExpanded) {
+              for (const idx of indicesToToggle) next.delete(idx)
+            } else {
+              for (const idx of indicesToToggle) next.add(idx)
+            }
+            return { ...prev, expandedToolGroups: next }
+          })
+          return
+        }
+
+        // Ctrl+O — toggle ALL tool outputs expand/collapse (长输出的折叠)
+        if (key.ctrl && input === 'o') {
+          const msgs = history.displayMessages
+          const allToolIds: string[] = []
+          for (const msg of msgs) {
+            if (msg.type === 'assistant') {
+              for (const block of msg.content) {
+                if (block.type === 'tool_use') {
+                  allToolIds.push(block.id)
+                }
+              }
+            }
+          }
+
+          if (allToolIds.length === 0) return
+
+          setCollapse((prev) => {
+            const allExpanded = allToolIds.every(id => prev.expandedToolOutputs.has(id))
+            const next = new Set(prev.expandedToolOutputs)
+            if (allExpanded) {
+              // 全部折叠
+              next.clear()
+            } else {
+              // 全部展开
+              for (const id of allToolIds) next.add(id)
+            }
+            return { ...prev, expandedToolOutputs: next }
+          })
+          return
+        }
       }
     },
     { isActive: true },
@@ -793,7 +862,8 @@ export function REPL(_props: Props) {
       {permissionRequest && (
         <PermissionPrompt
           request={permissionRequest}
-          selectedIndex={permSelectedIndex}
+          selectedIndex={selectedIndex}
+          onSelectedIndexChange={setSelectedIndex}
         />
       )}
 

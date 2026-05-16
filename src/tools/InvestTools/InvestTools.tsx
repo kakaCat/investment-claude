@@ -101,36 +101,60 @@ function pyToolDef(config: PyToolConfig): ToolDef {
 
         // 错误情况
         if (parsed.error) {
-          return <Text color="red">{parsed.error}</Text>
-        }
-
-        // 限制显示长度 - 超过 500 字符截断
-        const jsonStr = JSON.stringify(parsed, null, 2)
-        if (jsonStr.length > 500) {
-          const preview = jsonStr.slice(0, 500)
-          const lines = preview.split('\n')
           return (
-            <Box flexDirection="column">
-              {lines.slice(0, 8).map((line, i) => (
-                <Text key={i} color="gray" dimColor>{line}</Text>
-              ))}
-              <Text color="gray" dimColor italic>... ({jsonStr.length} chars total)</Text>
+            <Box flexDirection="column" paddingLeft={2}>
+              <Box>
+                <Text backgroundColor="gray" color="black"> IN </Text>
+                <Text> {config.name}</Text>
+              </Box>
+              <Box marginTop={1}>
+                <Text backgroundColor="gray" color="black"> OUT </Text>
+                <Text color="red"> Error: {parsed.error}</Text>
+              </Box>
             </Box>
           )
         }
 
-        // 正常显示
+        // 限制显示长度 - 超过 500 字符截断
+        const jsonStr = JSON.stringify(parsed, null, 2)
+        const preview = jsonStr.length > 500 ? jsonStr.slice(0, 500) + '…' : jsonStr
+        const lines = preview.split('\n')
+
         return (
-          <Box flexDirection="column">
-            {jsonStr.split('\n').map((line, i) => (
-              <Text key={i} color="gray" dimColor>{line}</Text>
-            ))}
+          <Box flexDirection="column" paddingLeft={2}>
+            <Box>
+              <Text backgroundColor="gray" color="black"> IN </Text>
+              <Text> {config.name}</Text>
+            </Box>
+            <Box marginTop={1}>
+              <Text backgroundColor="gray" color="black"> OUT </Text>
+              <Text color="green"> ✓ Success</Text>
+            </Box>
+            <Box paddingLeft={5} marginTop={1} flexDirection="column">
+              {lines.slice(0, 10).map((line, i) => (
+                <Text key={i} color="gray">{line}</Text>
+              ))}
+              {jsonStr.length > 500 && (
+                <Text color="gray" dimColor>... ({jsonStr.length} chars total)</Text>
+              )}
+            </Box>
           </Box>
         )
       } catch {
         // JSON 解析失败，显示原始文本（截断）
-        const preview = data.length > 300 ? data.slice(0, 300) + '...' : data
-        return <Text color="gray" dimColor>{preview}</Text>
+        const preview = data.length > 300 ? data.slice(0, 300) + '…' : data
+        return (
+          <Box flexDirection="column" paddingLeft={2}>
+            <Box>
+              <Text backgroundColor="gray" color="black"> IN </Text>
+              <Text> {config.name}</Text>
+            </Box>
+            <Box marginTop={1}>
+              <Text backgroundColor="gray" color="black"> OUT </Text>
+              <Text color="gray"> {preview}</Text>
+            </Box>
+          </Box>
+        )
       }
     },
   }

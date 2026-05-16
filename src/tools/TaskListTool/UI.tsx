@@ -68,12 +68,22 @@ function statusIcon(status: Task['status']): string {
 }
 
 export function TaskListToolResultMessageUI({ output }: { output: TaskListResult }) {
+  const filters: string[] = []
+  if (output.filters.status) filters.push(`status=${output.filters.status}`)
+  if (output.filters.owner) filters.push(`owner=${output.filters.owner}`)
+  const filterStr = filters.length ? filters.join(', ') : 'all'
+
   if (output.totalTasks === 0) {
     return (
-      <Box flexDirection="column">
-        <Text color="yellow">No tasks found</Text>
-        {output.filters.status && <Text color="gray">Filter: status={output.filters.status}</Text>}
-        {output.filters.owner && <Text color="gray">Filter: owner={output.filters.owner}</Text>}
+      <Box flexDirection="column" paddingLeft={2}>
+        <Box>
+          <Text backgroundColor="gray" color="black"> IN </Text>
+          <Text> task_list {filterStr}</Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text backgroundColor="gray" color="black"> OUT </Text>
+          <Text color="yellow"> No tasks found</Text>
+        </Box>
       </Box>
     )
   }
@@ -84,20 +94,25 @@ export function TaskListToolResultMessageUI({ output }: { output: TaskListResult
   }, {} as Record<TaskStatus, number>)
 
   return (
-    <Box flexDirection="column">
-      <Text color="cyan">
-        Found {output.totalTasks} task{output.totalTasks !== 1 ? 's' : ''}
-        {output.filters.status && ` (status: ${output.filters.status})`}
-        {output.filters.owner && ` (owner: ${output.filters.owner})`}
-      </Text>
+    <Box flexDirection="column" paddingLeft={2}>
+      <Box>
+        <Text backgroundColor="gray" color="black"> IN </Text>
+        <Text> task_list {filterStr}</Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text backgroundColor="gray" color="black"> OUT </Text>
+        <Text color="green"> ✓ Found {output.totalTasks} task{output.totalTasks !== 1 ? 's' : ''}</Text>
+      </Box>
 
       {Object.keys(byStatus).length > 1 && (
-        <Text color="gray">
-          {Object.entries(byStatus).map(([status, count]) => `${status}: ${count}`).join(', ')}
-        </Text>
+        <Box paddingLeft={5}>
+          <Text color="gray">
+            {Object.entries(byStatus).map(([status, count]) => `${status}: ${count}`).join(', ')}
+          </Text>
+        </Box>
       )}
 
-      <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection="column" paddingLeft={5} marginTop={1}>
         {output.tasks.slice(0, 10).map((task) => (
           <Box key={task.id} gap={1}>
             <Text color={statusColor(task.status) as Parameters<typeof Text>[0]['color']}>

@@ -65,34 +65,45 @@ export function renderToolResultMessage(
   output: InvestmentOutput,
   { verbose }: { verbose: boolean }
 ): React.ReactNode {
+  const funcName = output.function || 'unknown'
+
   // 错误情况
   if (!output.success) {
     return (
-      <Box flexDirection="column">
-        <Text color="red">❌ Investment tool error</Text>
-        <Text color="gray">Function: {output.function}</Text>
-        <Text color="red">{output.error}</Text>
+      <Box flexDirection="column" paddingLeft={2}>
+        <Box>
+          <Text backgroundColor="gray" color="black"> IN </Text>
+          <Text> {funcName}</Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text backgroundColor="gray" color="black"> OUT </Text>
+          <Text color="red"> Error: {output.error}</Text>
+        </Box>
       </Box>
     )
   }
 
-  // 成功情况 - 非详细模式
-  if (!verbose) {
-    return (
-      <Box>
-        <Text color="green">✓ {output.function}</Text>
-        {output.data?.symbol && <Text color="gray"> ({output.data.symbol})</Text>}
-      </Box>
-    )
-  }
+  // 成功情况 - 格式化数据预览
+  const dataStr = output.data ? JSON.stringify(output.data, null, 2) : 'No data'
+  const preview = dataStr.length > 500 ? dataStr.slice(0, 500) + '…' : dataStr
+  const lines = preview.split('\n')
 
-  // 成功情况 - 详细模式
   return (
-    <Box flexDirection="column">
-      <Text color="green">✓ Investment function "{output.function}" completed</Text>
-      {output.data?.symbol && <Text color="gray">Symbol: {output.data.symbol}</Text>}
-      {output.data?.name && <Text color="gray">Name: {output.data.name}</Text>}
-      {output.data?.price && <Text color="gray">Price: ¥{output.data.price}</Text>}
+    <Box flexDirection="column" paddingLeft={2}>
+      <Box>
+        <Text backgroundColor="gray" color="black"> IN </Text>
+        <Text> {funcName}</Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text backgroundColor="gray" color="black"> OUT </Text>
+        <Text color="green"> ✓ Success</Text>
+      </Box>
+      <Box paddingLeft={5} marginTop={1} flexDirection="column">
+        {lines.slice(0, 10).map((line, i) => (
+          <Text key={i} color="gray">{line}</Text>
+        ))}
+        {lines.length > 10 && <Text color="gray" dimColor>... ({dataStr.length} chars total)</Text>}
+      </Box>
     </Box>
   )
 }

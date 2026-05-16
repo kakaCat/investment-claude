@@ -60,14 +60,16 @@ export const BashTool = buildTool({
   },
   isReadOnly: () => false,
   renderToolUse: (input) => (
-    <BashToolUseUI input={input as { command: string }} />
+    <BashToolUseUI input={input as { command: string; description?: string }} />
   ),
   renderToolResult: (result) => <BashToolResultUI result={result} />,
-  renderToolResultMessage: (output: BashResult) => (
+  renderToolResultMessage: (output: BashResult, context) => (
     <BashToolResultUI
+      command={context?.input ? (context.input as { command: string }).command : output.command}
       stdout={output.stdout}
       stderr={output.stderr}
       exitCode={output.exitCode}
+      isExpanded={context?.isExpanded ?? true}
     />
   ),
   async call(input, context) {

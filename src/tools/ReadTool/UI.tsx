@@ -3,10 +3,8 @@ import { Box, Text } from 'ink'
 
 export function ReadToolUseUI({ input }: { input: { path: string } }) {
   return (
-    <Box>
-      <Text color="cyan" bold>
-        read{' '}
-      </Text>
+    <Box gap={1}>
+      <Text backgroundColor="gray" color="black"> IN  </Text>
       <Text color="gray">{input.path}</Text>
     </Box>
   )
@@ -33,10 +31,14 @@ export function ReadToolResultUI({
   if (content !== undefined || error !== undefined) {
     if (error) {
       return (
-        <Box flexDirection="column">
-          <Text color="red" bold>
-            Error reading file: {error}
-          </Text>
+        <Box flexDirection="column" paddingLeft={2} gap={0}>
+          <Box gap={1}>
+            <Text backgroundColor="gray" color="black"> OUT </Text>
+            <Text color="red">✗ Error reading file</Text>
+          </Box>
+          <Box paddingLeft={6}>
+            <Text color="red">{error}</Text>
+          </Box>
         </Box>
       )
     }
@@ -44,23 +46,26 @@ export function ReadToolResultUI({
     const preview = content && content.length > 500 ? content.slice(0, 500) + '…' : content
 
     return (
-      <Box flexDirection="column">
-        <Box>
-          <Text color="cyan" dimColor>
-            📄 {path}
-          </Text>
+      <Box flexDirection="column" paddingLeft={2} gap={0}>
+        <Box gap={1}>
+          <Text backgroundColor="gray" color="black"> OUT </Text>
+          <Text color="green">✓ {path}</Text>
           <Text color="gray" dimColor>
-            {' '}({size} bytes, {lines} lines)
+            ({size} bytes, {lines} lines)
           </Text>
         </Box>
         {truncated && (
-          <Text color="yellow" dimColor>
-            [Preview truncated - file is too large]
-          </Text>
+          <Box paddingLeft={6}>
+            <Text color="yellow" dimColor>
+              [Preview truncated - file is too large]
+            </Text>
+          </Box>
         )}
-        <Text color="gray" wrap="wrap">
-          {preview}
-        </Text>
+        <Box paddingLeft={6}>
+          <Text color="gray" wrap="wrap">
+            {preview}
+          </Text>
+        </Box>
       </Box>
     )
   }

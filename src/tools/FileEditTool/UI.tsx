@@ -6,12 +6,54 @@ export function FileEditToolUseUI({
 }: {
   input: { path: string; old_string: string; new_string: string }
 }) {
-  const preview = input.old_string.slice(0, 40).replace(/\n/g, '↵')
+  const oldLines = input.old_string.split('\n')
+  const newLines = input.new_string.split('\n')
+
+  // 限制显示行数
+  const maxLines = 10
+  const showOldLines = oldLines.slice(0, maxLines)
+  const showNewLines = newLines.slice(0, maxLines)
+  const hasMoreOld = oldLines.length > maxLines
+  const hasMoreNew = newLines.length > maxLines
+
   return (
-    <Box>
-      <Text color="yellow" bold>edit </Text>
-      <Text color="gray">{input.path}</Text>
-      <Text color="gray"> "{preview}{input.old_string.length > 40 ? '…' : ''}"</Text>
+    <Box flexDirection="column" gap={0}>
+      <Box gap={1}>
+        <Text backgroundColor="gray" color="black"> IN  </Text>
+        <Text color="gray">{input.path}</Text>
+      </Box>
+
+      {/* 修改前 */}
+      <Box paddingLeft={6} marginTop={1}>
+        <Text color="red" dimColor>━ Before:</Text>
+      </Box>
+      {showOldLines.map((line, i) => (
+        <Box key={`old-${i}`} paddingLeft={6}>
+          <Text color="red" dimColor>- </Text>
+          <Text color="red" dimColor>{line || ' '}</Text>
+        </Box>
+      ))}
+      {hasMoreOld && (
+        <Box paddingLeft={6}>
+          <Text color="red" dimColor>  ... ({oldLines.length - maxLines} more lines)</Text>
+        </Box>
+      )}
+
+      {/* 修改后 */}
+      <Box paddingLeft={6} marginTop={1}>
+        <Text color="green" dimColor>━ After:</Text>
+      </Box>
+      {showNewLines.map((line, i) => (
+        <Box key={`new-${i}`} paddingLeft={6}>
+          <Text color="green" dimColor>+ </Text>
+          <Text color="green" dimColor>{line || ' '}</Text>
+        </Box>
+      ))}
+      {hasMoreNew && (
+        <Box paddingLeft={6}>
+          <Text color="green" dimColor>  ... ({newLines.length - maxLines} more lines)</Text>
+        </Box>
+      )}
     </Box>
   )
 }
@@ -36,9 +78,14 @@ type FileEditResult = {
 export function FileEditToolResultMessageUI({ output }: { output: FileEditResult }) {
   if (!output.success) {
     return (
-      <Box flexDirection="column">
-        <Text color="red">✗ Edit failed</Text>
-        <Text color="red">{output.error}</Text>
+      <Box flexDirection="column" paddingLeft={2} gap={0}>
+        <Box gap={1}>
+          <Text backgroundColor="gray" color="black"> OUT </Text>
+          <Text color="red">✗ Edit failed</Text>
+        </Box>
+        <Box paddingLeft={6}>
+          <Text color="red">{output.error}</Text>
+        </Box>
       </Box>
     )
   }
@@ -47,11 +94,16 @@ export function FileEditToolResultMessageUI({ output }: { output: FileEditResult
   const deltaText = delta > 0 ? `+${delta}` : delta < 0 ? `${delta}` : '±0'
 
   return (
-    <Box flexDirection="column">
-      <Text color="green">✓ Edited {output.path}</Text>
-      <Text color="gray">
-        Replaced {output.oldLength} chars with {output.newLength} chars ({deltaText})
-      </Text>
+    <Box flexDirection="column" paddingLeft={2} gap={0}>
+      <Box gap={1}>
+        <Text backgroundColor="gray" color="black"> OUT </Text>
+        <Text color="green">✓ Edited {output.path}</Text>
+      </Box>
+      <Box paddingLeft={6}>
+        <Text color="gray">
+          Replaced {output.oldLength} chars with {output.newLength} chars ({deltaText})
+        </Text>
+      </Box>
     </Box>
   )
 }

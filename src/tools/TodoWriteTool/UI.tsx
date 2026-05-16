@@ -28,10 +28,21 @@ export function TodoListUI({ todos }: { todos: TodoItem[] }) {
     <Box flexDirection="column" paddingX={1}>
       {todos.map((item, i) => {
         const { symbol, color } = statusMarker(item.status)
+        const isCompleted = item.status === 'completed'
+        const isInProgress = item.status === 'in_progress'
+        const text = isInProgress ? item.activeForm : item.content
+
         return (
           <Box key={i} gap={1}>
             <Text color={color as Parameters<typeof Text>[0]['color']}>{symbol}</Text>
-            <Text>{item.status === 'in_progress' ? item.activeForm : item.content}</Text>
+            <Text
+              strikethrough={isCompleted}
+              dimColor={isCompleted}
+              backgroundColor={isInProgress ? 'yellow' : undefined}
+              color={isInProgress ? 'black' : isCompleted ? 'gray' : undefined}
+            >
+              {text}
+            </Text>
           </Box>
         )
       })}

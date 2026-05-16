@@ -7,11 +7,11 @@ export function GrepToolUseUI({
   input: { pattern: string; path?: string; glob?: string }
 }) {
   return (
-    <Box>
-      <Text color="cyan" bold>grep </Text>
+    <Box gap={1}>
+      <Text backgroundColor="gray" color="black"> IN  </Text>
       <Text color="gray">/{input.pattern}/</Text>
-      {input.path && <Text color="gray"> in {input.path}</Text>}
-      {input.glob && <Text color="gray"> [{input.glob}]</Text>}
+      {input.path && <Text color="gray">in {input.path}</Text>}
+      {input.glob && <Text color="gray" dimColor>[{input.glob}]</Text>}
     </Box>
   )
 }
@@ -41,8 +41,11 @@ export function GrepToolResultUI({
   if (matches !== undefined) {
     if (matches.length === 0) {
       return (
-        <Box paddingLeft={1}>
-          <Text color="yellow">No matches for /{pattern}/</Text>
+        <Box flexDirection="column" paddingLeft={2} gap={0}>
+          <Box gap={1}>
+            <Text backgroundColor="gray" color="black"> OUT </Text>
+            <Text color="yellow">No matches for /{pattern}/</Text>
+          </Box>
         </Box>
       )
     }
@@ -51,26 +54,31 @@ export function GrepToolResultUI({
     const hasMore = matches.length > 10
 
     return (
-      <Box flexDirection="column" paddingLeft={1}>
-        <Text color="green" bold>
-          Found {totalMatches} matches in {totalFiles} files
-        </Text>
-        {preview.map((m, i) => (
-          <Box key={i}>
-            <Text color="cyan">{m.file}:{m.line}</Text>
-            <Text>: {m.content}</Text>
-          </Box>
-        ))}
-        {hasMore && (
-          <Text color="gray" dimColor>
-            ... and {matches.length - 10} more matches
+      <Box flexDirection="column" paddingLeft={2} gap={0}>
+        <Box gap={1}>
+          <Text backgroundColor="gray" color="black"> OUT </Text>
+          <Text color="green">
+            Found {totalMatches} matches in {totalFiles} files
           </Text>
-        )}
-        {truncated && (
-          <Text color="yellow">
-            [Results limited to first 100 matches]
-          </Text>
-        )}
+        </Box>
+        <Box flexDirection="column" paddingLeft={6}>
+          {preview.map((m, i) => (
+            <Box key={i}>
+              <Text color="cyan">{m.file}:{m.line}</Text>
+              <Text>: {m.content}</Text>
+            </Box>
+          ))}
+          {hasMore && (
+            <Text color="gray" dimColor>
+              ... and {matches.length - 10} more matches
+            </Text>
+          )}
+          {truncated && (
+            <Text color="yellow">
+              [Results limited to first 100 matches]
+            </Text>
+          )}
+        </Box>
       </Box>
     )
   }

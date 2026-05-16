@@ -460,17 +460,62 @@ export const TradeLogTool = buildTool({
       return {
         type: 'tool_result',
         tool_use_id: toolUseId,
-        content: `Trade log operation failed: ${output.error}`,
+        content: `❌ 交易日志操作失败: ${output.error}`,
         is_error: true,
       }
     }
 
-    // Format success output
-    const formatted = JSON.stringify(output.data, null, 2)
+    // Format success output based on data type
+    const data = output.data
+
+    // Handle list action
+    if (Array.isArray(data)) {
+      const logs = data as TradeLog[]
+      if (logs.length === 0) {
+        return {
+          type: 'tool_result',
+          tool_use_id: toolUseId,
+          content: `✅ 操作成功\n\n📋 当前无交易日志`,
+        }
+      }
+      let content = `✅ 操作成功\n\n📋 交易日志列表 (${logs.length} 条):\n\n`
+      logs.forEach((log, i) => {
+        content += `${i + 1}. ${log.symbol} (${log.name})\n`
+        content += `   • 建仓价: ¥${log.entry_price} | 日期: ${log.entry_date}\n`
+        content += `   • 记录数: ${log.records.length} 条\n`
+        if (i < logs.length - 1) content += `\n`
+      })
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content,
+      }
+    }
+
+    // Handle single log (get/create/append)
+    const log = data as TradeLog
+    let content = `✅ 操作成功\n\n`
+    content += `📊 ${log.symbol} (${log.name})\n`
+    content += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+    content += `建仓价格: ¥${log.entry_price}\n`
+    content += `建仓日期: ${log.entry_date}\n`
+    content += `记录总数: ${log.records.length} 条\n`
+
+    if (log.records.length > 0) {
+      content += `\n最近记录:\n`
+      const recentRecords = log.records.slice(-3)
+      recentRecords.forEach((record, i) => {
+        content += `  ${record.date} | ${record.event}`
+        if (record.price) content += ` | ¥${record.price}`
+        content += `\n`
+        if (record.notes) content += `    备注: ${record.notes}\n`
+      })
+    }
+
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: `Trade log operation successful:\n\n${formatted}`,
+      content,
     }
   },
   renderToolResultMessage(output, options) {

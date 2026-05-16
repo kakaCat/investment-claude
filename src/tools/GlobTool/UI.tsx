@@ -3,10 +3,10 @@ import { Box, Text } from 'ink'
 
 export function GlobToolUseUI({ input }: { input: { pattern: string; cwd?: string } }) {
   return (
-    <Box>
-      <Text color="cyan" bold>glob </Text>
+    <Box gap={1}>
+      <Text backgroundColor="gray" color="black"> IN  </Text>
       <Text color="gray">{input.pattern}</Text>
-      {input.cwd && <Text color="gray"> in {input.cwd}</Text>}
+      {input.cwd && <Text color="gray" dimColor>in {input.cwd}</Text>}
     </Box>
   )
 }
@@ -38,18 +38,25 @@ export function GlobToolResultUI({
   if (files !== undefined || error !== undefined) {
     if (error) {
       return (
-        <Box flexDirection="column">
-          <Text color="red" bold>
-            Error: {error}
-          </Text>
+        <Box flexDirection="column" paddingLeft={2} gap={0}>
+          <Box gap={1}>
+            <Text backgroundColor="gray" color="black"> OUT </Text>
+            <Text color="red">✗ Error</Text>
+          </Box>
+          <Box paddingLeft={6}>
+            <Text color="red">{error}</Text>
+          </Box>
         </Box>
       )
     }
 
     if (!files || totalFiles === 0) {
       return (
-        <Box flexDirection="column">
-          <Text color="yellow">No files matched "{pattern}"</Text>
+        <Box flexDirection="column" paddingLeft={2} gap={0}>
+          <Box gap={1}>
+            <Text backgroundColor="gray" color="black"> OUT </Text>
+            <Text color="yellow">No files matched "{pattern}"</Text>
+          </Box>
         </Box>
       )
     }
@@ -58,20 +65,25 @@ export function GlobToolResultUI({
     const hasMore = files.length > 20
 
     return (
-      <Box flexDirection="column">
-        <Text color="green" bold>
-          Found {totalFiles ?? 0} file{(totalFiles ?? 0) > 1 ? 's' : ''} ({formatBytes(totalSize ?? 0)})
-        </Text>
-        {preview.map((file, i) => (
-          <Text key={i} color="gray">
-            {file}
+      <Box flexDirection="column" paddingLeft={2} gap={0}>
+        <Box gap={1}>
+          <Text backgroundColor="gray" color="black"> OUT </Text>
+          <Text color="green">
+            Found {totalFiles ?? 0} file{(totalFiles ?? 0) > 1 ? 's' : ''} ({formatBytes(totalSize ?? 0)})
           </Text>
-        ))}
-        {hasMore && (
-          <Text color="gray" dimColor>
-            ... and {files.length - 20} more files
-          </Text>
-        )}
+        </Box>
+        <Box flexDirection="column" paddingLeft={6}>
+          {preview.map((file, i) => (
+            <Text key={i} color="gray">
+              {file}
+            </Text>
+          ))}
+          {hasMore && (
+            <Text color="gray" dimColor>
+              ... and {files.length - 20} more files
+            </Text>
+          )}
+        </Box>
       </Box>
     )
   }

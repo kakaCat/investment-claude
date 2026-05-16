@@ -3,23 +3,34 @@
  *
  * 为 Claude 提供投资经验查询工具的使用说明
  */
-export const EXPERIENCE_QUERY_TOOL_DESCRIPTION = `Query investment experience and lessons learned from historical memory.
+export const EXPERIENCE_QUERY_TOOL_DESCRIPTION = `查询历史投资经验和教训，从过去的决策中学习，避免重复犯错。
 
-This tool searches through experience data stored in .pi/memory/ directory, including:
-- Daily experience logs (memory/daily/*.jsonl)
-- Stock-specific memories (memory/stocks/*.md)
+## 数据来源
 
-Parameters:
-- query: Search query string (required)
-- category: Filter by category (optional)
-  - stock_selection: Stock picking decisions
-  - timing: Entry/exit timing
-  - position_sizing: Position management
-  - risk_management: Risk control
-  - market_analysis: Market analysis insights
-- limit: Maximum results to return (default 10)
+- **每日经验日志**: .pi/memory/daily/*.jsonl（按日期记录的交易心得）
+- **个股记忆库**: .pi/memory/stocks/*.md（特定股票的长期观察和总结）
 
-Example:
+## 参数说明
+
+- **query**: 搜索关键词（必填）- 支持中文，如"止损"、"追高"、"抄底"
+- **category**: 分类筛选（可选）- 按投资环节精准查找
+  - stock_selection: 选股决策（如何选出好股票）
+  - timing: 择时决策（何时买入/卖出）
+  - position_sizing: 仓位管理（买多少、如何加减仓）
+  - risk_management: 风险控制（止损、止盈策略）
+  - market_analysis: 市场分析（大盘判断、行业轮动）
+- **limit**: 返回结果数量（默认 10）
+
+## 使用场景
+
+1. **决策前查询**: 买入前搜索"该股票"或"该行业"的历史经验
+2. **遇到问题时**: 搜索"止损"、"被套"等关键词，看过去如何处理
+3. **复盘时学习**: 搜索"失败"、"教训"，总结规律
+4. **策略优化**: 搜索"选股"、"择时"，提炼成功模式
+
+## 示例
+
+查找止损相关经验：
 \`\`\`json
 {
   "query": "止损",
@@ -28,8 +39,16 @@ Example:
 }
 \`\`\`
 
-## Usage Guidelines
+查找某只股票的历史记录：
+\`\`\`json
+{
+  "query": "贵州茅台",
+  "limit": 10
+}
+\`\`\`
 
-1. **Broad queries**: Use general terms to find related experiences
-2. **Category filtering**: Narrow down results by specific investment aspect
-3. **Learn from history**: Review past decisions to avoid repeating mistakes`
+## 最佳实践
+
+- 使用具体关键词（"追高被套" 比 "买入" 更精准）
+- 结合分类筛选提高查询效率
+- 定期回顾高频出现的问题，形成检查清单`

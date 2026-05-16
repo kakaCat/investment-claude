@@ -235,51 +235,62 @@ export const EvolutionRunTool = buildTool({
       return {
         type: 'tool_result',
         tool_use_id: toolUseId,
-        content: `Evolution analysis failed: ${output.error || 'Unknown error'}`,
+        content: `❌ 进化分析失败: ${output.error || '未知错误'}`,
         is_error: true,
       }
     }
 
     const report = output.report
     const gap = report.gap_analysis
+    const current = report.current_performance
+    const target = report.target_performance
 
-    // Format report for Claude
-    let content = `Evolution Analysis Report\n\n`
-    content += `Period: ${report.period.start} to ${report.period.end}\n`
-    content += `Status: ${report.status}\n\n`
+    // Format report for Claude with clear structure
+    let content = `✅ 进化分析完成\n\n`
+    content += `📅 分析周期: ${report.period.start} → ${report.period.end}\n`
+    content += `📊 状态: ${report.status}\n\n`
 
-    content += `Performance Metrics:\n`
-    content += `- Total Return: ${report.current_performance.total_return.toFixed(2)}% (Target: ${report.target_performance.total_return.toFixed(2)}%)\n`
-    content += `- Win Rate: ${(report.current_performance.win_rate * 100).toFixed(1)}% (Target: ${(report.target_performance.win_rate * 100).toFixed(1)}%)\n`
-    content += `- Avg Profit: ${report.current_performance.avg_profit.toFixed(2)}% (Target: ${report.target_performance.avg_profit.toFixed(2)}%)\n`
-    content += `- Max Drawdown: ${report.current_performance.max_drawdown.toFixed(2)}% (Target: ${report.target_performance.max_drawdown.toFixed(2)}%)\n`
-    if (report.current_performance.sharpe_ratio !== undefined) {
-      content += `- Sharpe Ratio: ${report.current_performance.sharpe_ratio.toFixed(2)}`
-      if (report.target_performance.sharpe_ratio) {
-        content += ` (Target: ${report.target_performance.sharpe_ratio.toFixed(2)})`
-      }
-      content += `\n`
+    content += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+    content += `📈 核心指标对比\n`
+    content += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+    content += `总收益率:   ${current.total_return.toFixed(2)}% / ${target.total_return.toFixed(2)}% (目标)\n`
+    content += `胜率:       ${(current.win_rate * 100).toFixed(1)}% / ${(target.win_rate * 100).toFixed(1)}% (目标)\n`
+    content += `平均盈利:   ${current.avg_profit.toFixed(2)}% / ${target.avg_profit.toFixed(2)}% (目标)\n`
+    content += `最大回撤:   ${current.max_drawdown.toFixed(2)}% / ${target.max_drawdown.toFixed(2)}% (目标)\n`
+    if (current.sharpe_ratio !== undefined && target.sharpe_ratio !== undefined) {
+      content += `夏普比率:   ${current.sharpe_ratio.toFixed(2)} / ${target.sharpe_ratio.toFixed(2)} (目标)\n`
     }
+    content += `\n`
 
-    content += `\nGap Analysis:\n`
-    content += `- Performance Gap: ${gap.performance_gap.toFixed(2)}%\n`
-    content += `- Attribution:\n`
-    content += `  - Stock Selection: ${gap.attribution.stock_selection}%\n`
-    content += `  - Timing: ${gap.attribution.timing}%\n`
-    content += `  - Position Sizing: ${gap.attribution.position_sizing}%\n`
-    content += `  - Risk Management: ${gap.attribution.risk_management}%\n`
+    content += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+    content += `🔍 差距归因分析\n`
+    content += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+    content += `总差距: ${gap.performance_gap.toFixed(2)}%\n\n`
+    content += `归因分解:\n`
+    content += `  • 选股问题: ${gap.attribution.stock_selection}% ${gap.attribution.stock_selection >= 30 ? '⚠️ 重点关注' : ''}\n`
+    content += `  • 择时问题: ${gap.attribution.timing}% ${gap.attribution.timing >= 30 ? '⚠️ 重点关注' : ''}\n`
+    content += `  • 仓位问题: ${gap.attribution.position_sizing}% ${gap.attribution.position_sizing >= 30 ? '⚠️ 重点关注' : ''}\n`
+    content += `  • 风控问题: ${gap.attribution.risk_management}% ${gap.attribution.risk_management >= 30 ? '⚠️ 重点关注' : ''}\n`
+    content += `\n`
 
     if (gap.recommendations.length > 0) {
-      content += `\nRecommendations:\n`
-      gap.recommendations.forEach((rec, i) => {
+      content += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+      content += `💡 优化建议 (${gap.recommendations.length} 条)\n`
+      content += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+      gap.recommendations.slice(0, 5).forEach((rec, i) => {
         content += `${i + 1}. ${rec}\n`
       })
+      if (gap.recommendations.length > 5) {
+        content += `\n... 还有 ${gap.recommendations.length - 5} 条建议，详见完整报告\n`
+      }
     }
 
-    if (report.actions_taken.length > 0) {
-      content += `\nActions Taken:\n`
+    content += `\n📁 完整报告已保存至: .pi/evolution/reports/\n`
+
+    if (report.actions_taken && report.actions_taken.length > 0) {
+      content += `\n✅ 已执行操作:\n`
       report.actions_taken.forEach((action) => {
-        content += `- ${action}\n`
+        content += `  • ${action}\n`
       })
     }
 

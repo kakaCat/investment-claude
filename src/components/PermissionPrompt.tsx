@@ -1,8 +1,8 @@
 // src/components/PermissionPrompt.tsx
 // Terminal permission dialog — ref Claude Code src/components/permissions/PermissionDialog.tsx
 
-import React from 'react'
-import { Box, Text } from 'ink'
+import React, { useEffect } from 'react'
+import { Box, Text, useInput } from 'ink'
 import type { PermissionDecision, PermissionUserChoice } from '../permissions/types.js'
 import { ruleValueToString } from '../permissions/ruleMatching.js'
 
@@ -30,37 +30,50 @@ const OPTIONS: PermissionOption[] = [
 type Props = {
   request: PermissionPromptRequest
   selectedIndex: number
+  onSelectedIndexChange: (index: number) => void
 }
 
-export function PermissionPrompt({ request, selectedIndex }: Props) {
-  const rulePreview = request.decision.suggestions?.[0]?.rules
-    ?.map(ruleValueToString)
-    .join(', ')
+export function PermissionPrompt({ request, selectedIndex, onSelectedIndexChange }: Props) {
+  const rulePreview = React.useMemo(
+    () => request.decision.suggestions?.[0]?.rules?.map(ruleValueToString).join(', '),
+    [request.decision.suggestions]
+  )
+
+  // Handle keyboard input for navigation
+  useInput((input, key) => {
+    if (key.upArrow) {
+      onSelectedIndexChange(Math.max(0, selectedIndex - 1))
+    } else if (key.downArrow) {
+      onSelectedIndexChange(Math.min(OPTIONS.length - 1, selectedIndex + 1))
+    } else if (key.return) {
+      const opt = OPTIONS[selectedIndex]!
+      request.resolve({
+        action: opt.action,
+        persist: opt.persist,
+        destination: opt.persist ? 'projectSettings' : undefined,
+      })
+    } else if (key.escape) {
+      request.resolve({ action: 'deny', persist: false })
+    }
+  })
 
   return (
     <Box
       flexDirection="column"
-      borderStyle="double"  // 改进 1: 双线边框，更醒目
+      borderStyle="double"
       borderColor="yellow"
       paddingX={1}
       paddingY={1}
-      marginX={2}  // 改进 2: 左右边距，不贴边
+      marginX={2}
       marginY={1}
     >
-      {/* 改进 3: Header 区域 - 标题和工具名分离 */}
+      {/* Header 区域 */}
       <Box justifyContent="space-between" marginBottom={1}>
         <Text color="yellow" bold>
           🔒 权限请求
         </Text>
         <Text color="gray" dimColor>
           {request.toolName}
-        </Text>
-      </Box>
-
-      {/* 分隔线 - 增强视觉层次 */}
-      <Box marginBottom={1}>
-        <Text color="gray" dimColor>
-          {'─'.repeat(60)}
         </Text>
       </Box>
 
@@ -76,7 +89,6 @@ export function PermissionPrompt({ request, selectedIndex }: Props) {
 
           return (
             <Box key={i} marginY={0}>
-              {/* 改进 4: 反色高亮选中项 */}
               {isSelected ? (
                 <Text inverse color="cyan" bold>
                   ▸ {opt.label.padEnd(15)} — {opt.description}
@@ -91,29 +103,17 @@ export function PermissionPrompt({ request, selectedIndex }: Props) {
         })}
       </Box>
 
-      {/* 改进 5: 规则预览独立区域 */}
+      {/* 规则预览 */}
       {rulePreview && (
-        <Box
-          borderStyle="single"
-          borderColor="gray"
-          paddingX={1}
-          marginY={1}
-        >
+        <Box paddingX={1} marginY={1}>
           <Text color="gray" dimColor>
             规则预览: {rulePreview}
           </Text>
         </Box>
       )}
 
-      {/* 分隔线 */}
-      <Box marginTop={1} marginBottom={1}>
-        <Text color="gray" dimColor>
-          {'─'.repeat(60)}
-        </Text>
-      </Box>
-
       {/* 帮助文本 */}
-      <Box justifyContent="center">
+      <Box justifyContent="center" marginTop={1}>
         <Text color="gray" dimColor>
           ↑↓ 选择  Enter 确认  Esc 取消
         </Text>

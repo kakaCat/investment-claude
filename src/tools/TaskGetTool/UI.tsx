@@ -24,64 +24,105 @@ export function TaskGetToolResultUI({ result }: { result: TaskGetResult | string
   if (typeof result === 'string') {
     if (result.startsWith('ERROR:')) {
       return (
-        <Box paddingX={1}>
-          <Text color="yellow">{result}</Text>
+        <Box flexDirection="column" paddingLeft={2}>
+          <Box>
+            <Text backgroundColor="gray" color="black"> IN </Text>
+            <Text> task_get</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text backgroundColor="gray" color="black"> OUT </Text>
+            <Text color="yellow"> {result}</Text>
+          </Box>
         </Box>
       )
     }
     try {
       const task = JSON.parse(result)
       return (
-        <Box flexDirection="column" paddingX={1}>
-          <Box gap={1}>
-            <Text color="gray">#{task.id}</Text>
-            <Text bold>{task.subject}</Text>
-            <Text color="gray">[{task.status}]</Text>
+        <Box flexDirection="column" paddingLeft={2}>
+          <Box>
+            <Text backgroundColor="gray" color="black"> IN </Text>
+            <Text> task_get #{task.id}</Text>
           </Box>
-          {task.description && <Text color="gray">{task.description}</Text>}
-          {task.owner && <Text color="gray">Owner: {task.owner}</Text>}
+          <Box marginTop={1}>
+            <Text backgroundColor="gray" color="black"> OUT </Text>
+            <Text color="green"> ✓ {task.subject}</Text>
+          </Box>
+          <Box paddingLeft={5} gap={1}>
+            <Text color="gray">[{task.status}]</Text>
+            {task.owner && <Text color="gray">@{task.owner}</Text>}
+          </Box>
+          {task.description && (
+            <Box paddingLeft={5}>
+              <Text color="gray">{task.description}</Text>
+            </Box>
+          )}
         </Box>
       )
     } catch {
-      return <Box paddingX={1}><Text color="gray">{result}</Text></Box>
+      return (
+        <Box flexDirection="column" paddingLeft={2}>
+          <Box>
+            <Text backgroundColor="gray" color="black"> IN </Text>
+            <Text> task_get</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text backgroundColor="gray" color="black"> OUT </Text>
+            <Text color="gray"> {result}</Text>
+          </Box>
+        </Box>
+      )
     }
   }
 
   // New structured result
   if (!result.success) {
     return (
-      <Box paddingX={1}>
-        <Text color="yellow">ERROR: {result.error}</Text>
+      <Box flexDirection="column" paddingLeft={2}>
+        <Box>
+          <Text backgroundColor="gray" color="black"> IN </Text>
+          <Text> task_get #{result.taskId}</Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text backgroundColor="gray" color="black"> OUT </Text>
+          <Text color="yellow"> Error: {result.error}</Text>
+        </Box>
       </Box>
     )
   }
 
   const task = result.task!
+  const outputPreview = task.output && task.output.length > 100
+    ? task.output.slice(0, 100) + '…'
+    : task.output
+
   return (
-    <Box flexDirection="column" paddingX={1}>
-      <Box gap={1}>
-        <Text color="gray">#{task.id}</Text>
-        <Text bold>{task.subject}</Text>
+    <Box flexDirection="column" paddingLeft={2}>
+      <Box>
+        <Text backgroundColor="gray" color="black"> IN </Text>
+        <Text> task_get #{task.id}</Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text backgroundColor="gray" color="black"> OUT </Text>
+        <Text color="green"> ✓ {task.subject}</Text>
+      </Box>
+      <Box paddingLeft={5} gap={1}>
         <Text color="gray">[{task.status}]</Text>
+        {task.owner && <Text color="gray">@{task.owner}</Text>}
       </Box>
       {task.description && (
-        <Box paddingLeft={2}>
+        <Box paddingLeft={5}>
           <Text color="gray">{task.description}</Text>
         </Box>
       )}
-      {task.owner && (
-        <Box paddingLeft={2}>
-          <Text color="cyan">Owner: {task.owner}</Text>
-        </Box>
-      )}
       {task.blockedBy && task.blockedBy.length > 0 && (
-        <Box paddingLeft={2}>
+        <Box paddingLeft={5}>
           <Text color="yellow">Blocked by: {task.blockedBy.join(', ')}</Text>
         </Box>
       )}
-      {task.output && (
-        <Box paddingLeft={2}>
-          <Text color="gray" dimColor>Output: {task.output.slice(0, 100)}{task.output.length > 100 ? '...' : ''}</Text>
+      {outputPreview && (
+        <Box paddingLeft={5}>
+          <Text color="gray" dimColor>Output: {outputPreview}</Text>
         </Box>
       )}
     </Box>

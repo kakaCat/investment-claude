@@ -1,13 +1,17 @@
 import React from 'react'
+import { join } from 'path'
+import { mkdir, writeFile } from 'fs/promises'
 import { createAnthropicClient } from '../../anthropic.js'
 import TurndownService from 'turndown'
 import { buildTool } from '../../Tool.js'
+import { getSessionId } from '../../bootstrap/state.js'
 import { DESCRIPTION, SEARCH_HINT } from './prompt.js'
 import { WebFetchToolUseUI, WebFetchToolResultUI, WebFetchToolResultMessageUI } from './UI.js'
 
 const MAX_BODY_BYTES = 10 * 1024 * 1024  // 10 MB
 const MAX_MD_CHARS = 100_000
 const FETCH_TIMEOUT = 60_000             // 60 seconds
+const PREVIEW_LENGTH = 500               // 预览字符数
 
 type WebFetchResult = {
   success: boolean
@@ -15,7 +19,12 @@ type WebFetchResult = {
   content: string
   contentLength: number
   truncated: boolean
+  savedPath?: string  // 保存的文件路径
   error?: string
+}
+
+function getWebFetchDir(): string {
+  return join(process.cwd(), '.pi', 'sessions', getSessionId(), 'web_fetch')
 }
 
 // Lazy singleton — turndown is ~1.4 MB, only load when first used
@@ -160,6 +169,15 @@ export const WebFetchTool = buildTool<
     }
 
     const content = await applyPrompt(url, markdown, prompt)
+
+    // 保存完整内容到文件
+    const dir = getWebFetchDir()
+    await mkdir(dir, { recursive: true })
+    const timestamp = Date.now()
+    const sanitizedUrl = url.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 50)
+    const filepath = join(dir, `fetch-${timestamp}-${sanitizedUrl}.txt`)
+    await writeFile(filepath, content, 'utf-8')
+
     return {
       data: {
         success: true,
@@ -167,6 +185,7 @@ export const WebFetchTool = buildTool<
         content,
         contentLength,
         truncated,
+        savedPath: filepath,
       },
     }
   },
@@ -285,10 +304,22 @@ Important:
       }
     }
 
+    // 成功情况：返回文件路径和预览
+    const preview = data.content.slice(0, PREVIEW_LENGTH)
+    const resultContent = `Fetched: ${data.url}
+Content saved to: ${data.savedPath}
+
+Preview (first ${PREVIEW_LENGTH} chars):
+${preview}${data.content.length > PREVIEW_LENGTH ? '\n...' : ''}
+
+Total: ${data.content.length} chars
+${data.truncated ? 'Note: Original content was truncated during fetch\n' : ''}
+To view full content, use the Read tool: Read("${data.savedPath}")`
+
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: data.content,
+      content: resultContent,
     }
   },
 })

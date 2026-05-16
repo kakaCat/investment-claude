@@ -3,21 +3,58 @@
  *
  * 为 Claude 提供进化分析工具的使用说明
  */
-export const EVOLUTION_RUN_TOOL_DESCRIPTION = `Trigger evolution analysis to identify performance gaps and optimization opportunities.
+export const EVOLUTION_RUN_TOOL_DESCRIPTION = `运行进化分析，自动识别交易表现差距，归因问题根源，生成优化建议。
 
-This tool runs a complete evolution cycle that:
-1. Analyzes trading performance over a specified period
-2. Compares current performance against target metrics
-3. Identifies gaps and their root causes
-4. Generates actionable recommendations
-5. Optionally auto-applies recommendations
+## 分析流程
 
-Parameters:
-- period_days: Analysis period in days (optional, default 30)
-- target_return: Target return percentage (optional, default 20)
-- auto_apply: Auto-apply recommendations (optional, default false)
+1. **收集数据**: 加载指定周期内的所有交易记录
+2. **计算指标**: 分析收益率、胜率、夏普比率等核心指标
+3. **差距对比**: 将实际表现与目标表现对比，量化差距
+4. **归因分析**: 将差距归因到四个维度（选股、择时、仓位、风控）
+5. **生成建议**: 基于归因结果，生成具体可执行的优化建议
 
-Example:
+## 参数说明
+
+- **period_days**: 分析周期（天数，默认 30）
+  - 7: 周度分析，快速反馈
+  - 30: 月度分析，全面评估
+  - 90: 季度分析，长期趋势
+- **target_return**: 目标收益率（%，默认 20）
+  - 根据市场环境调整：牛市 30%+，震荡市 15-20%，熊市 5-10%
+- **auto_apply**: 自动应用建议（默认 false，建议保持关闭）
+  - ⚠️ 仅在充分理解建议后手动开启
+
+## 使用场景
+
+1. **每周复盘**: 周末运行 7 天分析，快速调整策略
+2. **月度总结**: 每月 1 号运行 30 天分析，全面评估
+3. **表现不佳时**: 收益低于预期时立即运行，找出问题
+4. **策略调整后**: 验证新策略是否有效
+
+## 输出报告
+
+进化报告包含：
+- **当前表现**: 收益率、胜率、盈亏比、夏普比率、最大回撤
+- **目标表现**: 期望达到的各项指标
+- **差距分析**: 量化差距并归因到具体维度
+  - 选股问题（40%）: 选中的股票质量不高
+  - 择时问题（30%）: 买卖时机把握不准
+  - 仓位问题（20%）: 仓位管理不合理
+  - 风控问题（10%）: 止损止盈执行不力
+- **优化建议**: 针对每个问题的具体改进措施
+
+## 示例
+
+周度快速分析：
+\`\`\`json
+{
+  "period_days": 7,
+  "target_return": 15,
+  "auto_apply": false
+}
+\`\`\`
+
+月度全面分析：
 \`\`\`json
 {
   "period_days": 30,
@@ -26,24 +63,16 @@ Example:
 }
 \`\`\`
 
-## When to Use
+## 最佳实践
 
-- After completing trading sessions to review performance
-- When seeking optimization insights and improvement opportunities
-- For periodic performance reviews (weekly/monthly)
-- When performance is below expectations
+1. **定期运行**: 建议每周一次，保持持续改进
+2. **对比趋势**: 保存每次报告，观察进化曲线
+3. **聚焦重点**: 优先解决归因占比最高的问题
+4. **小步迭代**: 每次只改进 1-2 个方面，避免过度调整
+5. **验证效果**: 改进后运行新分析，验证是否有效
 
-## Output
+## 注意事项
 
-Evolution report containing:
-- Performance metrics (return, win rate, Sharpe ratio, etc.)
-- Gap analysis with attribution breakdown
-- Actionable recommendations for improvement
-- Actions taken (if auto_apply enabled)
-
-## Usage Guidelines
-
-1. **Regular reviews**: Run evolution analysis periodically to track progress
-2. **Set realistic targets**: Adjust target_return based on market conditions
-3. **Review recommendations**: Always review before enabling auto_apply
-4. **Track improvements**: Compare reports over time to measure evolution`
+- 样本量太小（< 5 笔交易）时分析结果可能不准确
+- auto_apply 功能仅用于测试，生产环境请手动审核建议
+- 报告保存在 .pi/evolution/reports/ 目录，可随时查看历史`

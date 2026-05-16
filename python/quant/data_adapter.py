@@ -133,8 +133,8 @@ def get_stock_history(
     # 重试机制（指数退避）
     for attempt in range(retry):
         try:
-            # 根据代码位数自动路由：5位=港股，6位=A股
-            if len(symbol) == 5:
+            # 根据代码位数自动路由：1-5位=港股，6位=A股
+            if len(symbol) <= 5:
                 result = akshare_bridge.get_hk_stock_history(symbol)
             else:
                 result = akshare_bridge.get_stock_history(symbol, count=min(days, MAX_HISTORY_DAYS))

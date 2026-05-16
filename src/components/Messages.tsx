@@ -15,12 +15,14 @@ export type CollapseState = {
   expandedToolGroups: Set<number>
   expandedAssistants: Set<number>
   expandedThinkings: Set<number>
+  expandedToolOutputs: Set<string> // tool call id
 }
 
 export const EMPTY_COLLAPSE: CollapseState = {
   expandedToolGroups: new Set(),
   expandedAssistants: new Set(),
   expandedThinkings: new Set(),
+  expandedToolOutputs: new Set(),
 }
 
 type Props = {
@@ -122,14 +124,21 @@ type ToolCallInfo = {
 const ToolCallLine = React.memo(({
   call,
   tools,
+  isExpanded = true,
+  collapse,
 }: {
   call: ToolCallInfo
   tools: Tool[]
+  isExpanded?: boolean
+  collapse: CollapseState
 }) => {
   const callTool = findTool(call.name, tools)
   const isError = call.status === 'error'
   const isDone = call.status === 'success' || call.status === 'error'
   const dotColor = isError ? 'red' : isDone ? 'green' : 'yellow'
+
+  // 工具输出内容是否展开（默认展开）
+  const isOutputExpanded = collapse.expandedToolOutputs.has(call.id)
 
   return (
     <Box
@@ -137,21 +146,24 @@ const ToolCallLine = React.memo(({
       marginBottom={1}
       marginLeft={2}
       paddingX={1}
-      paddingY={1}
-      borderStyle="single"
-      borderLeft
-      borderColor="cyan"
+      paddingY={0}
+      borderStyle="round"
+      borderColor="gray"
     >
       {/* 头部: ● ToolName  description */}
-      <Box gap={1}>
+      <Box gap={1} marginBottom={0}>
         <Text color={dotColor}>●</Text>
-        <Text color="cyan" bold>{call.name}</Text>
+        <Text bold>{call.name}</Text>
         {callTool && callTool.renderToolUse(call.input)}
+        {/* 折叠指示器 */}
+        {(call.result !== undefined || call.toolOutput !== undefined) && (
+          <Text color="gray" dimColor>{isExpanded ? '▼' : '▶'}</Text>
+        )}
       </Box>
 
-      {/* 结果 — 直接显示在下方，对标 Claude Code */}
-      {(call.result !== undefined || call.toolOutput !== undefined) && (
-        <Box paddingLeft={2} paddingTop={1}>
+      {/* 结果 — 只在展开时显示 */}
+      {isExpanded && (call.result !== undefined || call.toolOutput !== undefined) && (
+        <Box paddingTop={0}>
           {callTool ? (
             call.toolOutput !== undefined && callTool.renderToolResultMessage ? (
               callTool.renderToolResultMessage(call.toolOutput, {
@@ -159,15 +171,14 @@ const ToolCallLine = React.memo(({
                 tools,
                 verbose: false,
                 input: call.input,
+                isExpanded: isOutputExpanded,
               })
             ) : (
               callTool.renderToolResult(call.result ?? '')
             )
           ) : (
             <Text color="gray" dimColor wrap="wrap">
-              {call.result && call.result.length > 300
-                ? call.result.slice(0, 300) + '…'
-                : call.result ?? ''}
+              {call.result}
             </Text>
           )}
         </Box>
@@ -391,7 +402,7 @@ function MessagesInner({
   }, [messages, allMeta, maxHeight, scrollOffset, collapse])
 
   return (
-    <Box flexDirection="column" key={`msgs-${messages.length}`} paddingBottom={1}>
+    <Box flexDirection="column" paddingBottom={1}>
       {hiddenAboveCount > 0 && (
         <Box justifyContent="center" marginBottom={1}>
           <Text color="blue" dimColor>↑ earlier messages</Text>
@@ -409,68 +420,24 @@ function MessagesInner({
         }
 
         if (msg.type === 'assistant') {
-          const toolUses = getToolUses(msg)
-          const thinkingBlocks = msg.content.filter(
-            (c): c is ThinkingContent => c.type === 'thinking',
-          )
-
-          const lastToolUseIdx = msg.content.reduce(
-            (last, c, idx) => (c.type === 'tool_use' ? idx : last), -1,
-          )
-          const trailingText = msg.content
-            .slice(lastToolUseIdx + 1)
-            .filter((c): c is TextContent => c.type === 'text')
-            .map((c) => c.text)
-            .join('')
-
-          // Look for tool results in the next user message
           const nextUserMsg = visibleMessages
             .slice(vi + 1)
             .find((m) => m.type === 'user')
           const toolUseResults =
             nextUserMsg?.type === 'user' ? nextUserMsg.toolUseResults : undefined
 
-          const toolCalls: ToolCallInfo[] = toolUses.map((t) => ({
-            id: t.id,
-            name: t.name,
-            input: t.input,
-            result: toolResults.get(t.id),
-            status: toolUseResultStatus.get(t.id),
-            toolOutput: toolUseResultsMap.get(t.id) ?? toolUseResults?.[t.id],
-          }))
-
           return (
-            <Box key={msgKey} flexDirection="column">
-              {/* Thinking — 简短摘要，对标 Claude Code */}
-              {thinkingBlocks.length > 0 && (
-                <ThinkingLine
-                  blocks={thinkingBlocks}
-                  isExpanded={
-                    meta.thinkingGroupIdx >= 0
-                      ? collapse.expandedThinkings.has(meta.thinkingGroupIdx)
-                      : false
-                  }
-                />
-              )}
-
-              {/* 每个工具调用单独一行 — 对标 Claude Code */}
-              {toolCalls.map((tc) => (
-                <ToolCallLine
-                  key={tc.id}
-                  call={tc}
-                  tools={tools}
-                />
-              ))}
-
-              {/* 文本回复 */}
-              {trailingText && (
-                <AssistantBubble
-                  text={trailingText}
-                  isExpanded={collapse.expandedAssistants.has(meta.globalMsgIndex)}
-                  isLatest={meta.isLastAssistant}
-                />
-              )}
-            </Box>
+            <MemoizedAssistantMessage
+              key={msgKey}
+              msg={msg}
+              meta={meta}
+              toolResults={toolResults}
+              toolUseResultStatus={toolUseResultStatus}
+              toolUseResultsMap={toolUseResultsMap}
+              toolUseResults={toolUseResults}
+              tools={tools}
+              collapse={collapse}
+            />
           )
         }
 
@@ -479,5 +446,117 @@ function MessagesInner({
     </Box>
   )
 }
+
+// ── MemoizedAssistantMessage ────────────────────────────────────────
+
+type AssistantMessageProps = {
+  msg: Message & { type: 'assistant' }
+  meta: MsgMeta
+  toolResults: Map<string, string>
+  toolUseResultStatus: Map<string, 'success' | 'error'>
+  toolUseResultsMap: Map<string, unknown>
+  toolUseResults: Record<string, unknown> | undefined
+  tools: Tool[]
+  collapse: CollapseState
+}
+
+const MemoizedAssistantMessage = memo(
+  ({
+    msg,
+    meta,
+    toolResults,
+    toolUseResultStatus,
+    toolUseResultsMap,
+    toolUseResults,
+    tools,
+    collapse,
+  }: AssistantMessageProps) => {
+    const toolUses = getToolUses(msg)
+    const thinkingBlocks = msg.content.filter(
+      (c): c is ThinkingContent => c.type === 'thinking',
+    )
+
+    const lastToolUseIdx = msg.content.reduce(
+      (last, c, idx) => (c.type === 'tool_use' ? idx : last), -1,
+    )
+    const trailingText = msg.content
+      .slice(lastToolUseIdx + 1)
+      .filter((c): c is TextContent => c.type === 'text')
+      .map((c) => c.text)
+      .join('')
+
+    const toolCalls: ToolCallInfo[] = toolUses.map((t) => ({
+      id: t.id,
+      name: t.name,
+      input: t.input,
+      result: toolResults.get(t.id),
+      status: toolUseResultStatus.get(t.id),
+      toolOutput: toolUseResultsMap.get(t.id) ?? toolUseResults?.[t.id],
+    }))
+
+    // 工具组是否展开（默认折叠，除非是最新的消息）
+    const isToolGroupExpanded = meta.isLastAssistant || collapse.expandedToolGroups.has(meta.globalMsgIndex)
+
+    return (
+      <Box flexDirection="column">
+        {/* Thinking — 简短摘要，对标 Claude Code */}
+        {thinkingBlocks.length > 0 && (
+          <ThinkingLine
+            blocks={thinkingBlocks}
+            isExpanded={
+              meta.thinkingGroupIdx >= 0
+                ? collapse.expandedThinkings.has(meta.thinkingGroupIdx)
+                : false
+            }
+          />
+        )}
+
+        {/* 每个工具调用单独一行 — 对标 Claude Code */}
+        {toolCalls.map((tc) => (
+          <ToolCallLine
+            key={tc.id}
+            call={tc}
+            tools={tools}
+            isExpanded={isToolGroupExpanded}
+            collapse={collapse}
+          />
+        ))}
+
+        {/* 文本回复 */}
+        {trailingText && (
+          <AssistantBubble
+            text={trailingText}
+            isExpanded={collapse.expandedAssistants.has(meta.globalMsgIndex)}
+            isLatest={meta.isLastAssistant}
+          />
+        )}
+      </Box>
+    )
+  },
+  (prev, next) => {
+    // 自定义比较：只在消息内容真正变化时才重新渲染
+    if (prev.msg.content.length !== next.msg.content.length) return false
+    if (prev.meta.isLastAssistant !== next.meta.isLastAssistant) return false
+    if (prev.collapse !== next.collapse) return false
+
+    // 比较每个 content block
+    for (let i = 0; i < prev.msg.content.length; i++) {
+      const prevBlock = prev.msg.content[i]
+      const nextBlock = next.msg.content[i]
+
+      if (prevBlock.type !== nextBlock.type) return false
+
+      if (prevBlock.type === 'text' && nextBlock.type === 'text') {
+        if (prevBlock.text !== nextBlock.text) return false
+      } else if (prevBlock.type === 'thinking' && nextBlock.type === 'thinking') {
+        if (prevBlock.thinking !== nextBlock.thinking) return false
+      } else if (prevBlock.type === 'tool_use' && nextBlock.type === 'tool_use') {
+        if (prevBlock.id !== nextBlock.id) return false
+      }
+    }
+
+    return true
+  }
+)
 
 export const Messages = memo(MessagesInner)

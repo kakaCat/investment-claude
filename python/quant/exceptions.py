@@ -483,11 +483,11 @@ def validate_symbol(symbol: str) -> str:
             "Symbol must be a string", symbol=symbol, type=type(symbol).__name__
         )
 
-    if not re.match(r"^\d{5,6}$", symbol):
+    if not re.match(r"^\d{1,6}$", symbol):
         raise InvalidSymbolError(
             "Invalid stock symbol format",
             symbol=symbol,
-            expected_format="5-digit HK (e.g., 00700) or 6-digit A-share (e.g., 600519)",
+            expected_format="1-5 digit HK (e.g., 1, 700, 9988, 00700) or 6-digit A-share (e.g., 600519)",
         )
 
     return symbol

@@ -26,12 +26,22 @@ export function AskUserQuestionToolResultUI({ result }: { result: string | AskUs
   }
 
   // New structured result
+  const questionPreview = result.question.length > 100
+    ? result.question.slice(0, 100) + '…'
+    : result.question
+
   return (
     <Box flexDirection="column">
       <Box>
+        <Text color="magenta" bold>ask </Text>
+        <Text>{questionPreview}</Text>
+      </Box>
+      <Box>
         <Text color="magenta" bold>→ </Text>
-        <Text color={result.isDefault ? 'yellow' : 'green'}>{result.answer}</Text>
-        {result.isDefault && <Text color="gray"> (default)</Text>}
+        <Text color={result.isDefault ? 'yellow' : 'green'}>
+          {result.answer}
+          {result.isDefault && <Text color="gray"> (default)</Text>}
+        </Text>
       </Box>
     </Box>
   )

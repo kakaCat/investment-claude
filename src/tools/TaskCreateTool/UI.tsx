@@ -25,16 +25,31 @@ export function TaskCreateToolResultUI({ result }: { result: TaskCreateResult | 
       task = JSON.parse(result) as Task
     } catch {
       return (
-        <Box paddingX={1}>
-          <Text color="red">{result}</Text>
+        <Box flexDirection="column" paddingLeft={2}>
+          <Box>
+            <Text backgroundColor="gray" color="black"> IN </Text>
+            <Text> task_create</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text backgroundColor="gray" color="black"> OUT </Text>
+            <Text color="red"> Error: {result}</Text>
+          </Box>
         </Box>
       )
     }
     return (
-      <Box paddingX={1} gap={1}>
-        <Text color="gray">#{task.id}</Text>
-        <Text>{task.subject}</Text>
-        <Text color="gray">[{task.status}]</Text>
+      <Box flexDirection="column" paddingLeft={2}>
+        <Box>
+          <Text backgroundColor="gray" color="black"> IN </Text>
+          <Text> task_create</Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text backgroundColor="gray" color="black"> OUT </Text>
+          <Text color="green"> ✓ Created #{task.id}</Text>
+        </Box>
+        <Box paddingLeft={5}>
+          <Text>{task.subject}</Text>
+        </Box>
       </Box>
     )
   }
@@ -42,29 +57,37 @@ export function TaskCreateToolResultUI({ result }: { result: TaskCreateResult | 
   // New structured result
   if (!result.success) {
     return (
-      <Box paddingX={1}>
-        <Text color="red">ERROR: {result.error}</Text>
+      <Box flexDirection="column" paddingLeft={2}>
+        <Box>
+          <Text backgroundColor="gray" color="black"> IN </Text>
+          <Text> task_create</Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text backgroundColor="gray" color="black"> OUT </Text>
+          <Text color="red"> Error: {result.error}</Text>
+        </Box>
       </Box>
     )
   }
 
   const task = result.task!
   return (
-    <Box paddingX={1} flexDirection="column">
-      <Box gap={1}>
-        <Text color="green">✓ Created task</Text>
-        <Text color="gray">#{task.id}</Text>
+    <Box flexDirection="column" paddingLeft={2}>
+      <Box>
+        <Text backgroundColor="gray" color="black"> IN </Text>
+        <Text> task_create: {task.subject}</Text>
       </Box>
-      <Box paddingLeft={2}>
-        <Text>{task.subject}</Text>
+      <Box marginTop={1}>
+        <Text backgroundColor="gray" color="black"> OUT </Text>
+        <Text color="green"> ✓ Created task #{task.id}</Text>
       </Box>
       {task.description && (
-        <Box paddingLeft={2}>
+        <Box paddingLeft={5}>
           <Text color="gray" dimColor>{task.description}</Text>
         </Box>
       )}
       {task.blockedBy && task.blockedBy.length > 0 && (
-        <Box paddingLeft={2}>
+        <Box paddingLeft={5}>
           <Text color="yellow">Blocked by: {task.blockedBy.join(', ')}</Text>
         </Box>
       )}

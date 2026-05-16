@@ -3,15 +3,25 @@
  *
  * 为 Claude 提供交易日志管理工具的使用说明
  */
-export const TRADE_LOG_TOOL_DESCRIPTION = `Manage trading logs for tracking decision-making process and performance analysis.
+export const TRADE_LOG_TOOL_DESCRIPTION = `管理交易日志，记录完整的交易决策过程和执行细节，用于后续的复盘分析和进化优化。
 
-Actions:
-- create: Create a new trade log for a stock
-- append: Add a record to an existing trade log
-- get: Get a specific trade log
-- list: List all trade logs
+## 核心功能
 
-Example:
+- **create**: 为某只股票创建新的交易日志（建仓时使用）
+- **append**: 向已有日志追加记录（加仓、减仓、平仓、复盘时使用）
+- **get**: 获取指定股票的完整交易日志
+- **list**: 列出所有交易日志概览
+
+## 使用场景
+
+1. **建仓时**: 使用 create 记录买入理由、价格、仓位
+2. **调仓时**: 使用 append 记录加仓/减仓的决策依据
+3. **平仓时**: 使用 append 记录卖出原因和结果反思
+4. **复盘时**: 使用 get 查看完整交易过程，总结经验教训
+
+## 示例
+
+创建新日志：
 \`\`\`json
 {
   "action": "create",
@@ -19,12 +29,27 @@ Example:
   "name": "贵州茅台",
   "entry_price": 1650.00,
   "entry_date": "2026-05-16",
-  "notes": "基本面优秀，估值合理"
+  "notes": "基本面优秀，估值合理，行业龙头地位稳固"
 }
 \`\`\`
 
-## Usage Guidelines
+追加记录：
+\`\`\`json
+{
+  "action": "append",
+  "symbol": "600519",
+  "record": {
+    "date": "2026-05-20",
+    "action": "加仓",
+    "price": 1620.00,
+    "quantity": 100,
+    "notes": "回调至支撑位，加仓降低成本"
+  }
+}
+\`\`\`
 
-1. **Create before append**: Always create a trade log before appending records
-2. **One log per stock**: Each stock should have its own trade log file
-3. **Structured records**: Use consistent format for all log entries`
+## 重要提示
+
+- 每只股票一个日志文件，按 symbol 组织
+- 记录要详细具体，包含决策依据和心理状态
+- 日志是进化分析的核心数据源，记录越完整，分析越准确`

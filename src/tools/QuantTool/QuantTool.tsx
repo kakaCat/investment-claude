@@ -116,12 +116,12 @@ Usage examples:
           result: result.trim(),
         },
       }
-    } catch (error: any) {
+    } catch (e) {
       return {
         data: {
           success: false,
-          error: error.message,
-          result: error.stdout || error.stderr,
+          error: e instanceof Error ? e.message : String(e),
+          result: (e as any).stdout || (e as any).stderr,
         },
       }
     }
@@ -262,17 +262,43 @@ Important:
     if (!result.success) {
       return (
         <Box flexDirection="column" paddingLeft={2}>
-          <Text color="red">❌ 量化分析失败</Text>
-          <Text color="red">{result.error}</Text>
-          {result.result && <Text dimColor>{result.result}</Text>}
+          <Box>
+            <Text backgroundColor="gray" color="black"> IN </Text>
+            <Text> Quant analysis</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text backgroundColor="gray" color="black"> OUT </Text>
+            <Text color="red"> Error: {result.error}</Text>
+          </Box>
+          {result.result && (
+            <Box paddingLeft={5} marginTop={1}>
+              <Text color="gray" dimColor>{result.result}</Text>
+            </Box>
+          )}
         </Box>
       )
     }
 
+    const preview = result.result && result.result.length > 500
+      ? result.result.slice(0, 500) + '…'
+      : result.result
+    const lines = preview ? preview.split('\n') : []
+
     return (
       <Box flexDirection="column" paddingLeft={2}>
-        <Text color="green">✅ 量化分析完成</Text>
-        <Text>{result.result}</Text>
+        <Box>
+          <Text backgroundColor="gray" color="black"> IN </Text>
+          <Text> Quant analysis</Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text backgroundColor="gray" color="black"> OUT </Text>
+          <Text color="green"> ✓ Success</Text>
+        </Box>
+        <Box paddingLeft={5} marginTop={1} flexDirection="column">
+          {lines.map((line, i) => (
+            <Text key={i} color="gray">{line}</Text>
+          ))}
+        </Box>
       </Box>
     )
   },

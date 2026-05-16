@@ -331,7 +331,7 @@ export const ExperienceQueryTool = buildTool({
       return {
         type: 'tool_result',
         tool_use_id: toolUseId,
-        content: `Experience query failed: ${output.error}`,
+        content: `❌ 经验查询失败: ${output.error}`,
         is_error: true,
       }
     }
@@ -341,25 +341,50 @@ export const ExperienceQueryTool = buildTool({
       return {
         type: 'tool_result',
         tool_use_id: toolUseId,
-        content: `No experiences found for query: "${output.query}"`,
+        content: `🔍 未找到相关经验\n\n查询关键词: "${output.query}"\n\n建议:\n• 尝试更通用的关键词\n• 检查是否有相关记录\n• 使用不同的分类筛选`,
       }
     }
 
-    // Format results for Claude
-    const formatted = experiences
-      .map((exp, i) => {
-        let result = `\n[${i + 1}] ${exp.source}`
-        if (exp.category) result += ` [${exp.category}]`
-        if (exp.timestamp) result += `\n    Time: ${exp.timestamp}`
-        result += `\n    ${exp.content}`
-        return result
-      })
-      .join('\n')
+    // Format results for Claude with clear structure
+    let content = `✅ 找到 ${experiences.length} 条相关经验\n\n`
+    content += `🔍 查询: "${output.query || 'N/A'}"`
+    const inputCategory = (output as any).category // Access from original input if needed
+    if (inputCategory) content += ` | 分类: ${inputCategory}`
+    content += `\n\n`
+    content += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`
+
+    experiences.forEach((exp, i) => {
+      content += `📌 [${i + 1}] ${exp.source}`
+      if (exp.category) {
+        const categoryMap: Record<string, string> = {
+          stock_selection: '选股',
+          timing: '择时',
+          position_sizing: '仓位',
+          risk_management: '风控',
+          market_analysis: '市场分析',
+        }
+        content += ` | ${categoryMap[exp.category] || exp.category}`
+      }
+      content += `\n`
+
+      if (exp.timestamp) {
+        content += `   时间: ${exp.timestamp}\n`
+      }
+
+      content += `   ${exp.content}\n`
+
+      if (i < experiences.length - 1) {
+        content += `\n`
+      }
+    })
+
+    content += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+    content += `💡 提示: 这些经验可以帮助你做出更好的投资决策`
 
     return {
       type: 'tool_result',
       tool_use_id: toolUseId,
-      content: `Found ${experiences.length} experience(s) for query "${output.query}":${formatted}`,
+      content,
     }
   },
   renderToolResultMessage(output, options) {
