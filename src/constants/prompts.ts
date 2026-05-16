@@ -60,7 +60,6 @@ export function initSystemPrompt(): void {
   // 动态段（首次加载后缓存，/clear 时重置）
   registerSection('env_info', (ctx) => loadEnvInfo(ctx))
   registerSection('workspace', (ctx) => loadWorkspaceSection(ctx))
-  registerVolatileSection('git_status', (ctx) => loadGitStatus(ctx.cwd))
 
   // CLAUDE.md 加载已禁用 - 投资领域规则已内置在 promptSections.ts
   // 如需启用通用开发规范，设置环境变量 LOAD_CLAUDE_MD=1
@@ -71,7 +70,9 @@ export function initSystemPrompt(): void {
   registerSection('memory', async () => MEMORY_SYSTEM_INSTRUCTIONS)
   registerSection('snip_nudge', async () => SNIP_NUDGE)
 
-  // volatile 段（每轮重新执行）
+  // ── volatile 段（每轮重新执行）──
+  // ⚠️ 所有 volatile 段必须在此之后注册，确保缓存边界标记位置正确
+  registerVolatileSection('git_status', (ctx) => loadGitStatus(ctx.cwd))
   // Portfolio P&L — injected every turn so the AI always knows profit/loss status
   registerVolatileSection('portfolio_pnl', async (ctx) => {
     const portfolioPath = join(ctx.cwd, '.pi', 'portfolio.json')

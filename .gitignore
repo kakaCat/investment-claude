@@ -15,3 +15,8 @@ data/
 
 # Restart context (runtime state)
 .restart/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo

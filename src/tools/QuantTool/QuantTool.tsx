@@ -83,15 +83,15 @@ Usage examples:
               },
             }
           }
-          command = `python ${mlPipeline} predict --symbol ${symbol}`
+          command = `/opt/miniconda3/bin/python3 ${mlPipeline} predict --symbol ${symbol}`
           break
 
         case 'train_model':
-          command = `python ${mlPipeline} train`
+          command = `/opt/miniconda3/bin/python3 ${mlPipeline} train`
           break
 
         case 'evaluate_model':
-          command = `python ${mlPipeline} evaluate`
+          command = `/opt/miniconda3/bin/python3 ${mlPipeline} evaluate`
           break
 
         default:

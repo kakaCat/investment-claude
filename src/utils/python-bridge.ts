@@ -16,8 +16,9 @@ export async function callPython(functionName: string, args: Record<string, any>
     // 构造命令参数 - 匹配 Python 脚本的接口
     const argsJson = JSON.stringify(args)
 
-    // 直接执行脚本（利用 shebang 中指定的解释器），不依赖 PATH 中的 python3
-    const pythonProcess = spawn(pythonScript, [functionName, argsJson])
+    // 使用 miniconda Python 3.12（已安装 akshare）而非系统 Python 3.8
+    const pythonExecutable = '/opt/miniconda3/bin/python3'
+    const pythonProcess = spawn(pythonExecutable, [pythonScript, functionName, argsJson])
 
     let stdout = ''
     let stderr = ''

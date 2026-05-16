@@ -1,0 +1,38 @@
+{
+  "timestamp": "2026-05-16T04:24:15.587Z",
+  "period": {
+    "start": "2026-05-09",
+    "end": "2026-05-16"
+  },
+  "current_performance": {
+    "total_return": 0,
+    "win_rate": 0,
+    "avg_profit": 0,
+    "avg_loss": 0,
+    "max_drawdown": 0,
+    "sharpe_ratio": 0
+  },
+  "target_performance": {
+    "total_return": 15,
+    "win_rate": 0.6,
+    "avg_profit": 0.22499999999999998,
+    "avg_loss": -0.12,
+    "max_drawdown": 4.5,
+    "sharpe_ratio": 1.5
+  },
+  "gap_analysis": {
+    "performance_gap": 15,
+    "attribution": {
+      "stock_selection": 51.83585313174947,
+      "timing": 37.796976241900644,
+      "position_sizing": 6.479481641468683,
+      "risk_management": 3.88768898488121
+    },
+    "recommendations": [
+      "Improve stock selection: Current win rate 0.0% vs target 60.0%. Consider stricter entry criteria or better fundamental analysis.",
+      "Optimize entry/exit timing: Current profit/loss ratio 0.00 vs target 1.87. Review technical indicators and exit strategies."
+    ]
+  },
+  "actions_taken": [],
+  "status": "success"
+}

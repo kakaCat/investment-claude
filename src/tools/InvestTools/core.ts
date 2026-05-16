@@ -21,7 +21,7 @@ export async function callPython(
 
   return new Promise<string>((resolve) => {
     const child = execFile(
-      'python3',
+      '/opt/miniconda3/bin/python3',
       [pythonScript, func, argsJson],
       {
         timeout: 120_000,
