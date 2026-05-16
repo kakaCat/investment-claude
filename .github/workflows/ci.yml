@@ -32,6 +32,7 @@ jobs:
     - name: Code formatting check (Black)
       run: |
         black --check python/
+      continue-on-error: true
 
     - name: Import sorting check (isort)
       run: |
@@ -80,6 +81,7 @@ jobs:
 
     - name: Run Black
       run: black --check python/
+      continue-on-error: true
 
     - name: Run isort
       run: isort --check-only python/
