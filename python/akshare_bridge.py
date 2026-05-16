@@ -631,31 +631,51 @@ def get_sector_list() -> dict:
         return {"error": str(e), "count": 0, "data": []}
 
 
+# 行业到概念的映射表（用于降级方案，使用同花顺概念板块）
+SECTOR_TO_CONCEPT_MAP = {
+    "电子信息": ["芯片概念", "消费电子概念", "第三代半导体"],
+    "电子": ["芯片概念", "消费电子概念", "电子纸"],
+    "半导体": ["第三代半导体", "芯片概念"],
+    "芯片": ["芯片概念", "存储芯片", "汽车芯片"],
+    "新能源": ["新能源汽车", "锂电池概念", "光伏概念"],
+    "新能源汽车": ["新能源汽车"],
+    "锂电池": ["锂电池概念", "动力电池回收"],
+    "光伏": ["光伏概念", "TOPCON电池", "BC电池"],
+    "电池": ["锂电池概念", "固态电池", "钠离子电池"],
+    "医药": ["医疗器械概念", "生物疫苗", "医药电商"],
+    "医疗": ["医疗器械概念", "智能医疗", "眼科医疗"],
+    "生物医药": ["生物疫苗", "合成生物"],
+    "金融": ["银行", "保险", "券商"],
+    "人工智能": ["AI PC", "AI手机", "AI语料"],
+    "AI": ["AI PC", "AI手机", "AI语料"],
+    "白酒": ["白酒概念"],
+    "汽车": ["新能源汽车", "汽车芯片", "汽车电子"],
+}
+
+
 def screen_stocks_by_sector(
     sector: str, min_roe: float = None, max_pe: float = None, limit: int = 20
 ) -> dict:
-    """按板块筛选股票（东方财富行业板块）
+    """按板块筛选股票（东方财富行业板块，失败时自动降级到概念板块）
 
-    注意：此功能依赖东方财富网API，可能因网络问题或API变更而不可用
+    注意：此功能依赖东方财富网API，可能因网络问题或API变更而不可用。
+    当行业板块接口不可用时，会自动尝试使用概念板块作为替代。
     """
     from datetime import datetime
 
     import akshare as ak
 
     try:
-        # 获取板块成分股
+        # 尝试使用行业板块接口
         df = ak.stock_board_industry_cons_em(symbol=sector)
 
         if df is None or df.empty:
-            return {
-                "error": f"未找到板块: {sector}",
-                "sector": sector,
-                "suggestion": "使用 get_stock_info 查询个股信息",
-            }
+            # 如果行业板块为空，尝试概念板块降级
+            return _screen_stocks_by_concept_fallback(sector, min_roe, max_pe, limit)
 
         # 提取基本信息
         results = []
-        for _, row in df.head(limit).iterrows():
+        for _, row in df.head(limit * 2).iterrows():  # 获取更多数据用于过滤
             stock = {
                 "code": str(row.get("代码", "")),
                 "name": str(row.get("名称", "")),
@@ -682,23 +702,84 @@ def screen_stocks_by_sector(
             "count": len(results),
             "data": results[:limit],
             "data_date": datetime.now().strftime("%Y-%m-%d"),
+            "source": "industry",  # 标记数据来源
         }
 
     except Exception as e:
         error_msg = str(e)
-        if "Connection" in error_msg or "Proxy" in error_msg or "Remote" in error_msg:
-            return {
-                "error": f"网络连接失败，无法获取板块数据: {sector}",
-                "sector": sector,
-                "suggestion": "请检查网络连接或稍后重试。建议使用 get_stock_info 查询个股信息",
-                "technical_error": error_msg[:200],
-            }
+        if "Connection" in error_msg or "Proxy" in error_msg or "Remote" in error_msg or "Max retries" in error_msg:
+            # 网络错误，尝试概念板块降级
+            return _screen_stocks_by_concept_fallback(sector, min_roe, max_pe, limit)
         else:
             return {
                 "error": f"板块筛选失败: {error_msg[:200]}",
                 "sector": sector,
-                "suggestion": "使用 get_stock_info 查询个股信息",
+                "suggestion": "使用 get_concept_stocks 查询概念板块，或使用 get_stock_info 查询个股信息",
             }
+
+
+def _screen_stocks_by_concept_fallback(
+    sector: str, min_roe: float = None, max_pe: float = None, limit: int = 20
+) -> dict:
+    """概念板块降级方案（使用 get_concept_stocks）"""
+    from datetime import datetime
+
+    # 查找对应的概念
+    concepts = SECTOR_TO_CONCEPT_MAP.get(sector, [sector])
+
+    all_results = []
+    used_codes = set()  # 去重
+    successful_concepts = []
+
+    for concept in concepts:
+        try:
+            # 调用 get_concept_stocks 获取成分股
+            result = get_concept_stocks(concept)
+
+            if "error" in result:
+                continue
+
+            successful_concepts.append(result.get("concept", concept))
+
+            # 提取股票数据
+            for stock in result.get("data", []):
+                code = stock.get("code", "")
+                if code in used_codes:
+                    continue
+
+                all_results.append({
+                    "code": code,
+                    "name": stock.get("name", ""),
+                    "price": stock.get("price", 0),
+                    "change_pct": stock.get("change_pct", 0),
+                    "pe": None,  # 概念板块接口不包含PE/ROE
+                    "roe": None,
+                })
+                used_codes.add(code)
+
+        except Exception as e:
+            # 单个概念失败不影响其他概念
+            continue
+
+    if not all_results:
+        return {
+            "error": f"未找到板块或概念: {sector}",
+            "sector": sector,
+            "suggestion": f"尝试的概念: {', '.join(concepts)}。建议直接使用概念名称查询",
+        }
+
+    # 按涨跌幅排序
+    all_results.sort(key=lambda x: x["change_pct"], reverse=True)
+
+    return {
+        "sector": sector,
+        "count": len(all_results),
+        "data": all_results[:limit],
+        "data_date": datetime.now().strftime("%Y-%m-%d"),
+        "source": "concept_ths",  # 标记数据来源为同花顺概念
+        "concepts_used": successful_concepts,  # 显示实际使用的概念
+        "note": "行业板块接口不可用，已使用同花顺概念板块数据",
+    }
 
 
 def screen_stocks_quality(

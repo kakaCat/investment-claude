@@ -298,7 +298,7 @@ export const PromptInput = memo(function PromptInput({ onSubmit, isLoading, disa
       const next = insertAtCursor({ value, cursorPos }, input)
       setValueAndCursor(next.value, next.cursorPos)
     }
-  }, { isActive: !isSearching })
+  }, { isActive: !isSearching && !disabled })
 
   return (
     <Box flexDirection="column" gap={1}>
