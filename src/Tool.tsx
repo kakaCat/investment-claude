@@ -30,6 +30,7 @@ export type ToolResultBlockParam = {
   type: 'tool_result'
   tool_use_id: string
   content: string | Array<{ type: 'text'; text: string } | ImageBlock>
+  is_error?: boolean
 }
 
 /** 工具执行上下文（对标 Claude Code ToolUseContext） */
@@ -193,6 +194,7 @@ export interface Tool<Input = unknown, Output = unknown> {
       tools: Tool[]
       verbose: boolean
       input?: unknown  // 原始 tool_use input，用于上下文相关的渲染
+      isExpanded?: boolean  // 工具输出内容是否展开（用于长输出的折叠）
     }
   ): React.ReactNode
 }
