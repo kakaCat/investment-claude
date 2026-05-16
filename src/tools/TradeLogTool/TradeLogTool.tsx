@@ -1,5 +1,22 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs'
 import { join } from 'path'
+
+interface TradeLog {
+  log_id: string
+  symbol: string
+  name: string
+  entry_price: number
+  entry_date: string
+  notes: string
+  created_at: string
+  records: Array<{
+    date: string
+    event: string
+    price?: number
+    notes?: string
+    timestamp: string
+  }>
+}
 
 type TradeLogInput = {
   action: 'create' | 'append' | 'get' | 'list'
@@ -19,8 +36,12 @@ type TradeLogInput = {
 
 type TradeLogOutput = {
   success: boolean
-  data?: any
+  data?: TradeLog | TradeLog[]
   error?: string
+}
+
+function sanitizeLogId(logId: string): string {
+  return logId.replace(/[^a-zA-Z0-9_-]/g, '')
 }
 
 function loadJson<T>(filePath: string): T | null {
@@ -104,9 +125,10 @@ function handleAppend(input: TradeLogInput): TradeLogOutput {
   }
 
   const dir = ensureTradeLogDir()
-  const filePath = join(dir, `${log_id}.json`)
+  const sanitizedLogId = sanitizeLogId(log_id)
+  const filePath = join(dir, `${sanitizedLogId}.json`)
 
-  const tradeLog = loadJson<any>(filePath)
+  const tradeLog = loadJson<TradeLog>(filePath)
   if (!tradeLog) {
     return {
       success: false,
@@ -149,9 +171,10 @@ function handleGet(input: TradeLogInput): TradeLogOutput {
   }
 
   const dir = ensureTradeLogDir()
-  const filePath = join(dir, `${log_id}.json`)
+  const sanitizedLogId = sanitizeLogId(log_id)
+  const filePath = join(dir, `${sanitizedLogId}.json`)
 
-  const tradeLog = loadJson<any>(filePath)
+  const tradeLog = loadJson<TradeLog>(filePath)
   if (!tradeLog) {
     return {
       success: false,
@@ -169,15 +192,14 @@ function handleList(): TradeLogOutput {
   const dir = ensureTradeLogDir()
 
   try {
-    const fs = require('fs')
-    const files = fs.readdirSync(dir).filter((f: string) => f.endsWith('.json'))
+    const files = readdirSync(dir).filter((f: string) => f.endsWith('.json'))
 
     const logs = files
       .map((file: string) => {
         const filePath = join(dir, file)
-        return loadJson<any>(filePath)
+        return loadJson<TradeLog>(filePath)
       })
-      .filter((log: any) => log !== null)
+      .filter((log: TradeLog | null): log is TradeLog => log !== null)
 
     return {
       success: true,
@@ -190,3 +212,5 @@ function handleList(): TradeLogOutput {
     }
   }
 }
+
+export { handleCreate, handleAppend, handleGet, handleList }
