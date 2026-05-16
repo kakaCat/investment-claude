@@ -54,6 +54,53 @@ New Trade Records
 
 ## Usage
 
+### Running Evolution Analysis
+
+```typescript
+import { runEvolution } from './evolution-service'
+
+// Basic usage with defaults (last 30 days, 20% target return)
+const report = await runEvolution()
+
+// Custom period and target
+const report = await runEvolution({
+  period: {
+    start: '2024-01-01',
+    end: '2024-01-31'
+  },
+  target_return: 25,
+  auto_apply: false
+})
+
+// Auto-apply recommendations
+const report = await runEvolution({
+  target_return: 20,
+  auto_apply: true  // Saves recommendations to pending actions
+})
+```
+
+### Accessing Reports
+
+```typescript
+import { getLatestReport } from './evolution-service'
+
+// Get the most recent evolution report
+const latestReport = await getLatestReport()
+
+if (latestReport) {
+  console.log('Performance Gap:', latestReport.gap_analysis.performance_gap)
+  console.log('Recommendations:', latestReport.gap_analysis.recommendations)
+}
+```
+
+### Report Structure
+
+Evolution reports are saved to `.pi/evolution/reports/` and contain:
+- Current and target performance metrics
+- Gap analysis with attribution
+- Actionable recommendations
+- Actions taken (if auto_apply enabled)
+
 The intelligence services are designed to:
 1. Continuously monitor trading performance
 2. Identify areas for improvement
