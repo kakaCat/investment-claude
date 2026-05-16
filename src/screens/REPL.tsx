@@ -43,6 +43,7 @@ import '../commands/report.js'
 import '../commands/exit.js'
 import '../commands/dream.js'
 import '../commands/dashboard.js'
+import '../commands/restart.js'
 
 type Props = {
   // Stub props — 接口预留，当前不使用
