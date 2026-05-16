@@ -72,6 +72,20 @@ export const BUILTIN_COMMANDS: CommandItem[] = [
     description: '💤 整理长期记忆',
     source: 'builtin',
   },
+  {
+    id: 'builtin:restart',
+    command: '/restart',
+    label: 'restart',
+    description: '🔄 重启 Agent 进程',
+    source: 'builtin',
+  },
+  {
+    id: 'builtin:reboot',
+    command: '/reboot',
+    label: 'reboot',
+    description: '🔄 重启 Agent 进程（restart 别名）',
+    source: 'builtin',
+  },
 ]
 
 type SearchItem = CommandItem & {
