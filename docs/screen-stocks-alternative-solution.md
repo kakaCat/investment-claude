@@ -23,7 +23,7 @@ df = ak.stock_board_concept_name_ths()
 df = ak.stock_board_concept_summary_ths()
 ```
 
-**限制**: 
+**限制**:
 - 概念板块指数接口 (`stock_board_concept_index_ths`) 不稳定
 - 没有直接的成分股查询接口
 
@@ -34,7 +34,7 @@ df = ak.stock_board_concept_cons_em(symbol="人工智能")
 # 返回: 50只股票，包含代码、名称、价格、涨跌幅等
 ```
 
-**优势**: 
+**优势**:
 - 可以获取具体概念的成分股
 - 数据完整（代码、名称、价格、涨跌幅）
 - 已在当前项目中验证可用
@@ -59,17 +59,17 @@ def screen_stocks_by_concept(concept: str, limit: int = 20) -> dict:
     """按概念板块筛选股票（使用东方财富概念板块）"""
     import akshare as ak
     from datetime import datetime
-    
+
     try:
         df = ak.stock_board_concept_cons_em(symbol=concept)
-        
+
         if df is None or df.empty:
             return {
                 "error": f"未找到概念: {concept}",
                 "concept": concept,
                 "suggestion": "使用 get_concept_stocks 查询可用概念"
             }
-        
+
         results = []
         for _, row in df.head(limit).iterrows():
             results.append({
@@ -78,7 +78,7 @@ def screen_stocks_by_concept(concept: str, limit: int = 20) -> dict:
                 "price": float(row.get("最新价", 0)),
                 "change_pct": float(row.get("涨跌幅", 0)),
             })
-        
+
         return {
             "concept": concept,
             "count": len(results),
@@ -104,7 +104,7 @@ SECTOR_TO_CONCEPT_MAP = {
 
 def screen_stocks_by_sector_v2(sector: str, limit: int = 20) -> dict:
     """按行业筛选股票（通过概念板块实现）"""
-    
+
     # 尝试直接查询
     try:
         df = ak.stock_board_industry_cons_em(symbol=sector)
@@ -112,7 +112,7 @@ def screen_stocks_by_sector_v2(sector: str, limit: int = 20) -> dict:
     except:
         # 失败则使用概念映射
         concepts = SECTOR_TO_CONCEPT_MAP.get(sector, [sector])
-        
+
         # 合并多个概念的结果
         all_stocks = []
         for concept in concepts:
@@ -121,7 +121,7 @@ def screen_stocks_by_sector_v2(sector: str, limit: int = 20) -> dict:
                 # 添加到结果
             except:
                 continue
-        
+
         return merged_results
 ```
 
@@ -135,7 +135,7 @@ def screen_stocks_by_sector_v2(sector: str, limit: int = 20) -> dict:
 
 ## 实施建议
 
-1. **短期（立即）**: 
+1. **短期（立即）**:
    - 在 `screen_stocks_by_sector` 中添加友好的错误提示
    - 建议用户使用 `get_concept_stocks` 替代
 

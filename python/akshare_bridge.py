@@ -707,7 +707,12 @@ def screen_stocks_by_sector(
 
     except Exception as e:
         error_msg = str(e)
-        if "Connection" in error_msg or "Proxy" in error_msg or "Remote" in error_msg or "Max retries" in error_msg:
+        if (
+            "Connection" in error_msg
+            or "Proxy" in error_msg
+            or "Remote" in error_msg
+            or "Max retries" in error_msg
+        ):
             # 网络错误，尝试概念板块降级
             return _screen_stocks_by_concept_fallback(sector, min_roe, max_pe, limit)
         else:
@@ -747,14 +752,16 @@ def _screen_stocks_by_concept_fallback(
                 if code in used_codes:
                     continue
 
-                all_results.append({
-                    "code": code,
-                    "name": stock.get("name", ""),
-                    "price": stock.get("price", 0),
-                    "change_pct": stock.get("change_pct", 0),
-                    "pe": None,  # 概念板块接口不包含PE/ROE
-                    "roe": None,
-                })
+                all_results.append(
+                    {
+                        "code": code,
+                        "name": stock.get("name", ""),
+                        "price": stock.get("price", 0),
+                        "change_pct": stock.get("change_pct", 0),
+                        "pe": None,  # 概念板块接口不包含PE/ROE
+                        "roe": None,
+                    }
+                )
                 used_codes.add(code)
 
         except Exception as e:

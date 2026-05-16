@@ -813,7 +813,17 @@ export function REPL(_props: Props) {
         }
       }
     },
-    { isActive: true },
+    {
+      isActive:
+        isPartialSelectMode ||
+        !!askUserRequest ||
+        !!planApprovalRequest ||
+        !!verifyRequest ||
+        !!permissionRequest ||
+        collectingPlanReason ||
+        collectingVerifyReason ||
+        isLoading
+    },
   )
 
   return (

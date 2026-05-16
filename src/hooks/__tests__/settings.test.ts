@@ -25,7 +25,7 @@ describe('loadHooksSettings', () => {
     readFileSyncMock.mockImplementation((path) => {
       const filePath = String(path)
 
-      if (filePath === '/home/tester/.claude/settings.json') {
+      if (filePath === '/home/tester/.pi/settings.json') {
         return JSON.stringify({
           hooks: {
             PreToolUse: [
@@ -38,7 +38,7 @@ describe('loadHooksSettings', () => {
         })
       }
 
-      if (filePath === '/project/.claude/settings.json') {
+      if (filePath === '/project/.pi/settings.json') {
         return JSON.stringify({
           hooks: {
             PreToolUse: [
@@ -57,7 +57,7 @@ describe('loadHooksSettings', () => {
         })
       }
 
-      if (filePath === '/project/.claude/settings.local.json') {
+      if (filePath === '/project/.pi/settings.local.json') {
         return JSON.stringify({
           hooks: {
             PreToolUse: [
@@ -102,15 +102,15 @@ describe('loadHooksSettings', () => {
     readFileSyncMock.mockImplementation((path) => {
       const filePath = String(path)
 
-      if (filePath === '/home/tester/.claude/settings.json') {
+      if (filePath === '/home/tester/.pi/settings.json') {
         throw new Error(`ENOENT: ${filePath}`)
       }
 
-      if (filePath === '/project/.claude/settings.json') {
+      if (filePath === '/project/.pi/settings.json') {
         return '{ invalid json'
       }
 
-      if (filePath === '/project/.claude/settings.local.json') {
+      if (filePath === '/project/.pi/settings.local.json') {
         return JSON.stringify({
           hooks: {
             Stop: [
@@ -140,7 +140,7 @@ describe('loadHooksSettings', () => {
     readFileSyncMock.mockImplementation((path) => {
       const filePath = String(path)
 
-      if (filePath === '/home/tester/.claude/settings.json') {
+      if (filePath === '/home/tester/.pi/settings.json') {
         return JSON.stringify({
           hooks: {
             PreToolUse: [
