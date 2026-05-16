@@ -1,1 +1,0 @@
-Conversation message history. Array of Message objects (user | assistant | compact_boundary). Lives in React state (REPL) or session object (gateway). Passed to query engine each turn. Mutated by tool results and compaction. Leaf.

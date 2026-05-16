@@ -1,1 +1,0 @@
-CLI entry point (src/entrypoints/cli.tsx). Loads .env, parses argv flags (--version, --help, gateway subcommand), validates ANTHROPIC_API_KEY, then renders the Ink App+REPL component tree. Single file, no sub-structure.

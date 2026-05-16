@@ -1,1 +1,0 @@
-Tool execution layer (src/tools/). Receives tool_use blocks from query engine, runs the appropriate tool implementation, returns tool_result content. May write to task store, memory store, or cron file as side effects. Leaf.

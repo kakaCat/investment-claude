@@ -1,1 +1,0 @@
-Agent system (src/agents/). Defines built-in agent types (general-purpose, explore, plan) and supports loading custom agents from ~/.claude/agents/. Each agent specifies its tool pool, model, and system prompt. AgentTool uses runSubAgent to execute them.

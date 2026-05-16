@@ -1,1 +1,0 @@
-Hook system (src/hooks/). Lifecycle event bus for the query engine. Supports shell hooks (configured in settings.json, executed as subprocesses) and function hooks (registered in-process). Events: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, PreCompact, PostCompact, Stop.

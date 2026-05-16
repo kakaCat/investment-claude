@@ -1,1 +1,0 @@
-Hook system extension point (src/hooks/). Shell hooks are registered from settings.json — any shell command can subscribe to lifecycle events (SessionStart, PreToolUse, etc.) and receive JSON payloads via stdin. Function hooks are registered in-process by observability and other modules. Leaf.

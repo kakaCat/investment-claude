@@ -1,1 +1,0 @@
-Core compaction logic (src/compact/index.ts). Implements compactConversation (full) and partialCompactConversation. Calls Anthropic API to generate summary, fires PreCompact/PostCompact hooks, returns new message array with compact boundary marker. Leaf.

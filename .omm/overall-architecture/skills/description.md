@@ -1,1 +1,0 @@
-Skills system (src/skills/). Discovers and loads skill markdown files from ~/.claude/plugins/marketplaces/ and ~/.claude/plugins/. Skills are prompt templates invoked via SkillTool. DiscoverSkillsTool lists available skills.

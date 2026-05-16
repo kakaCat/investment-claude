@@ -1,1 +1,0 @@
-The message history is the central data structure — it grows with each turn (user message → assistant response → tool results). Compaction replaces the history with a summary when it grows too large. The system prompt is rebuilt each turn to include fresh context (git status, CLAUDE.md, session memory).

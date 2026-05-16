@@ -1,1 +1,0 @@
-Anthropic API (@anthropic-ai/sdk). External service providing Claude model inference. Pi calls it for: main query turns (streaming), compaction summaries (non-streaming). Configured via ANTHROPIC_API_KEY and optional PI_BASE_URL env vars.

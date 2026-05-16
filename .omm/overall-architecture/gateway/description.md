@@ -1,1 +1,0 @@
-Feishu gateway (src/gateway/). Alternative entry point for chat-based access via Feishu (Lark). Manages channel connections, session state, and routes inbound messages to the query engine. Sends responses as Feishu messages or interactive cards.

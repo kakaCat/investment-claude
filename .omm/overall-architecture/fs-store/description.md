@@ -1,1 +1,0 @@
-File system store (~/.pi/). Root of all Pi persistent data: tasks/ (agent task files), sessions/{id}/ (session logs, workspace), cron.json (scheduled jobs), settings.json (hook and gateway config). Also ~/.claude/projects/.../memory/ for memdir.

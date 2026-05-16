@@ -1,1 +1,0 @@
-Memory type registry (src/memdir/typeRegistry.ts). Registers built-in memory types (user, feedback, project, reference) and supports custom type definitions. Each type has a weight and age warning threshold. Leaf.

@@ -1,1 +1,0 @@
-Sub-agent spawning tool (src/tools/AgentTool/). Launches isolated agent sessions (general-purpose, explore, plan, or custom) with a subset of tools. Uses runSubAgent which calls the query engine recursively. Leaf.

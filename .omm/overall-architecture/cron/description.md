@@ -1,1 +1,0 @@
-Cron scheduler (src/cron/). Manages scheduled prompts that fire at configured intervals. Jobs are persisted to ~/.pi/cron.json. The scheduler runs in the background during a REPL session and injects scheduled prompts as user messages.

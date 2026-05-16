@@ -1,1 +1,0 @@
-System prompt builder (src/constants/prompts.ts). Assembles the system prompt from registered sections: env context, git context, workspace context, CLAUDE.md content, session memory, tool instructions. Rebuilt each turn. Leaf.

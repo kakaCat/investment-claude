@@ -1,1 +1,0 @@
-Single file (src/query.ts) but architecturally central. Mirrors Claude Code's QueryEngine. Yields StreamEvent objects consumed by REPL or gateway. The canUseTool callback is the permission gate — REPL shows a modal, gateway auto-allows.

@@ -1,1 +1,0 @@
-End-to-end data flow through Pi. User input enters as a message appended to history. The query engine sends history + system prompt to Anthropic API, receives streaming text and tool_use blocks, executes tools (which may write to task store or memory), appends tool_results, and loops until no more tool calls. Hooks capture events to the session log throughout.

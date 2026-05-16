@@ -1,1 +1,0 @@
-Core query loop (src/query.ts). Receives message history, sends to API, accumulates streaming response, dispatches tool calls, collects results, loops. Yields StreamEvents consumed by REPL or gateway. Leaf.

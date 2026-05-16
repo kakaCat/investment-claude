@@ -1,1 +1,0 @@
-Feishu channel plugin (src/gateway/channels/feishu/). Implements the channel interface for Feishu (Lark) using @larksuite/oapi-sdk-nodejs. Handles long-connection event subscription, sends text messages and interactive cards. External dependency.

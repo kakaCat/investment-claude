@@ -1,1 +1,0 @@
-This project is a learning exercise to understand Claude Code internals by re-implementing them. The codebase mirrors Claude Code's module structure (query.ts, REPL.tsx, tools/, hooks/, compact/, etc.) while adding Pi-specific extensions like the Feishu gateway, memory system (memdir), and cron scheduler.

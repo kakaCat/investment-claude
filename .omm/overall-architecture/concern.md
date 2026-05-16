@@ -1,3 +1,0 @@
-- query.ts is the central bottleneck — all turns, tool execution, and hook firing pass through it
-- Gateway and REPL share query engine but have different UI/interaction models; divergence risk as features grow
-- Memory system (memdir) is new and not yet integrated into the main query loop

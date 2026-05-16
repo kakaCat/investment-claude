@@ -1,1 +1,0 @@
-Context compaction system (src/compact/). Summarizes conversation history via Anthropic API to reduce token usage. Supports full compaction (replace all messages with summary), partial compaction (summarize one half), and auto-compaction (triggered when token count exceeds threshold).

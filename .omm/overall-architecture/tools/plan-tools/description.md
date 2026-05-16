@@ -1,1 +1,0 @@
-Plan mode tools: EnterPlanModeTool, ExitPlanModeTool, VerifyPlanExecutionTool (src/tools/). Control the plan approval workflow — enter plan mode, present plan for user approval, verify execution. Leaf group.

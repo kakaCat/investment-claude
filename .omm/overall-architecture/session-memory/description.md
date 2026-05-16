@@ -1,1 +1,0 @@
-Session memory system (src/sessionMemory/). Stores per-session context (key facts, summaries) in ~/.pi/sessions/{id}/. Used during compaction to preserve important context across compact boundaries. Separate from the persistent memdir memory system.

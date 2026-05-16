@@ -1,1 +1,0 @@
-Plugin tool extension point (src/plugins/). Provides getPluginTools() which can return additional Tool implementations beyond the built-in set. Currently minimal — the extension mechanism exists but no external plugins are loaded yet. Leaf.

@@ -1,1 +1,0 @@
-Pi CLI command surface. The binary exposes four modes: interactive REPL (default), Feishu gateway server, version flag, and help flag. All modes share the same entry point (cli.tsx) with argv dispatch.
