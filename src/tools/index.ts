@@ -35,6 +35,7 @@ import { SnipTool } from './SnipTool/SnipTool.js'
 import { BrowserTool } from './BrowserTool/BrowserTool.js'
 import { allInvestTools } from './InvestTools/InvestTools.js'
 import { QuantTool } from './QuantTool/QuantTool.js'
+import { TradeLogTool } from './TradeLogTool/TradeLogTool.js'
 import { SystemPromptTool } from './SystemPromptTool/SystemPromptTool.js'
 
 // 内置工具静态列表 — 新增工具在此 import + 加入数组
@@ -44,6 +45,7 @@ const BUILTIN_TOOLS: Tool[] = [
   ExitTool,
   ...allInvestTools,
   QuantTool,
+  TradeLogTool,
   SystemPromptTool,
   BashTool,
   ReadTool,
