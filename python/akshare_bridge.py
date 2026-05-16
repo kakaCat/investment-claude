@@ -619,7 +619,9 @@ def get_sector_list() -> dict:
                     "name": str(row.get("行业", "")),
                     "code": "",
                     "count": int(row.get("公司家数", 0)) if row.get("公司家数") else 0,
-                    "change_pct": float(row.get("行业-涨跌幅", 0)) if row.get("行业-涨跌幅") else 0,
+                    "change_pct": (
+                        float(row.get("行业-涨跌幅", 0)) if row.get("行业-涨跌幅") else 0
+                    ),
                 }
             )
         return {
@@ -959,8 +961,14 @@ def get_stock_news(symbol: str, num: int = 10) -> dict:
             "method": "web_browser",
             "instruction": "请使用浏览器工具访问以下任一URL获取新闻",
             "urls": [
-                {"source": "东方财富股吧", "url": f"https://guba.eastmoney.com/list,{raw}.html"},
-                {"source": "东方财富资讯", "url": f"https://so.eastmoney.com/news/s?keyword={raw}"},
+                {
+                    "source": "东方财富股吧",
+                    "url": f"https://guba.eastmoney.com/list,{raw}.html",
+                },
+                {
+                    "source": "东方财富资讯",
+                    "url": f"https://so.eastmoney.com/news/s?keyword={raw}",
+                },
                 {
                     "source": "新浪财经",
                     "url": f"https://finance.sina.com.cn/realstock/company/{raw.lower()}/nc.shtml",
@@ -1086,7 +1094,12 @@ def get_hot_stocks(market: str = "A股") -> dict:
         if df is None or df.empty:
             return {"error": f"暂无热搜数据: {market}"}
         records = df.head(20).to_dict(orient="records")
-        return {"market": market, "count": len(records), "data": records, "data_date": today}
+        return {
+            "market": market,
+            "count": len(records),
+            "data": records,
+            "data_date": today,
+        }
     except (TypeError, KeyError) as e:
         # Baidu API structure changed or deprecated
         return {
@@ -1519,7 +1532,10 @@ def get_pe_percentile(symbol: str, years: int = 5) -> dict:
         datalen = min(years * 250, 1200)
         raw = _sina_stock_history(symbol, datalen=datalen, scale=240)
         if not raw or len(raw) < 60:
-            return {"error": f"历史数据不足，无法计算PE分位数: {symbol}", "symbol": symbol}
+            return {
+                "error": f"历史数据不足，无法计算PE分位数: {symbol}",
+                "symbol": symbol,
+            }
 
         # 获取当前实时数据（含PE）
         rt = get_stock_realtime_price(symbol)
@@ -1677,7 +1693,7 @@ def get_quality_score(symbol: str) -> dict:
             "score": score,
             "grade": grade,
             "details": details,
-            "advice": "建议投资" if score >= 65 else ("谨慎考虑" if score >= 50 else "建议回避"),
+            "advice": ("建议投资" if score >= 65 else ("谨慎考虑" if score >= 50 else "建议回避")),
             "data_date": datetime.now().strftime("%Y-%m-%d"),
         }
     except Exception as e:
@@ -1815,7 +1831,10 @@ def get_macro_data(indicators: list = None) -> dict:
             if not df.empty:
                 df_valid = df.head(8)
                 results["gdp"] = [
-                    {"date": str(row["季度"]), "value": _safe_float(row["国内生产总值-绝对值"])}
+                    {
+                        "date": str(row["季度"]),
+                        "value": _safe_float(row["国内生产总值-绝对值"]),
+                    }
                     for _, row in df_valid.iterrows()
                 ]
         except Exception as e:
@@ -2040,13 +2059,20 @@ def get_hk_analysis(symbol: str) -> dict:
     import pandas as _pd
 
     code = _hk_code(symbol)
-    result = {"symbol": code, "market": "HK", "data_date": datetime.now().strftime("%Y-%m-%d")}
+    result = {
+        "symbol": code,
+        "market": "HK",
+        "data_date": datetime.now().strftime("%Y-%m-%d"),
+    }
     unavailable = []
 
     # 1. 实时价格
     price_data = get_hk_stock_price(symbol)
     if "error" in price_data:
-        return {"error": f"无法获取港股实时价格: {price_data['error']}", "symbol": symbol}
+        return {
+            "error": f"无法获取港股实时价格: {price_data['error']}",
+            "symbol": symbol,
+        }
     result["price"] = price_data
 
     # 2. 历史行情 + 技术指标（stooq）
@@ -2103,7 +2129,11 @@ def get_hk_analysis(symbol: str) -> dict:
 
 
 def manage_portfolio(
-    action: str, symbol: str = None, quantity: int = None, avg_cost: float = None, notes: str = ""
+    action: str,
+    symbol: str = None,
+    quantity: int = None,
+    avg_cost: float = None,
+    notes: str = "",
 ) -> dict:
     import os
     from datetime import datetime
@@ -2479,7 +2509,10 @@ def get_margin_data(symbol: str) -> dict:
         api_func = ak.stock_margin_detail_szse
         symbol_col = "证券代码"
     else:
-        return {"error": f"不支持的股票代码: {symbol}（仅支持沪深A股）", "symbol": symbol}
+        return {
+            "error": f"不支持的股票代码: {symbol}（仅支持沪深A股）",
+            "symbol": symbol,
+        }
 
     try:
         # akshare API changed: now returns all stocks for a given date, need to filter
@@ -2809,7 +2842,10 @@ def analyze_price_action(symbol: str) -> dict:
 
         raw_52w = _sina_stock_history(symbol, datalen=260, scale=240)
         if not raw_52w or len(raw_52w) < 250:
-            return {"error": "历史数据不足（52周分析至少需要250个交易日）", "symbol": symbol}
+            return {
+                "error": "历史数据不足（52周分析至少需要250个交易日）",
+                "symbol": symbol,
+            }
 
         df_52w = pd.DataFrame(raw_52w).copy()
         for col in ["high", "low", "close", "volume"]:
@@ -2821,7 +2857,10 @@ def analyze_price_action(symbol: str) -> dict:
             .reset_index(drop=True)
         )
         if len(df_52w) < 250:
-            return {"error": "历史数据不足（52周有效数据少于250个交易日）", "symbol": symbol}
+            return {
+                "error": "历史数据不足（52周有效数据少于250个交易日）",
+                "symbol": symbol,
+            }
 
         ma5 = close.rolling(5, min_periods=5).mean().iloc[-1]
         ma20 = close.rolling(20, min_periods=20).mean().iloc[-1]
@@ -3089,7 +3128,10 @@ def daemon_mode():
                 error_response = {
                     "jsonrpc": "2.0",
                     "id": req_id,
-                    "error": {"code": -32600, "message": "Invalid Request: jsonrpc must be '2.0'"},
+                    "error": {
+                        "code": -32600,
+                        "message": "Invalid Request: jsonrpc must be '2.0'",
+                    },
                 }
                 print(safe_json_dumps(error_response), flush=True)
                 continue
@@ -3098,7 +3140,10 @@ def daemon_mode():
                 error_response = {
                     "jsonrpc": "2.0",
                     "id": req_id,
-                    "error": {"code": -32600, "message": "Invalid Request: method is required"},
+                    "error": {
+                        "code": -32600,
+                        "message": "Invalid Request: method is required",
+                    },
                 }
                 print(safe_json_dumps(error_response), flush=True)
                 continue
