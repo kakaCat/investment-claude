@@ -967,7 +967,9 @@ export function REPL(_props: Props) {
             !!askUserRequest ||
             !!planApprovalRequest ||
             !!verifyRequest ||
-            isPartialSelectMode
+            isPartialSelectMode ||
+            collectingPlanReason ||
+            collectingVerifyReason
           }
           onExit={doExit}
           onCancel={handleCancel}
