@@ -1,3 +1,5 @@
+import React from 'react'
+import { Box, Text } from 'ink'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs'
 import { join } from 'path'
 import { buildTool, type ToolResult, type ToolUseContext } from '../../Tool.js'
@@ -273,6 +275,120 @@ function checkPermission(input: TradeLogInput): PermissionDecision {
   return { behavior: 'allow' }
 }
 
+// ── UI Rendering ────────────────────────────────────────────────────────────
+
+function renderToolResultMessage(
+  result: TradeLogOutput,
+  options: { verbose: boolean }
+): React.ReactNode {
+  // Error state
+  if (!result.success) {
+    return (
+      <Box flexDirection="column" paddingLeft={2}>
+        <Box>
+          <Text backgroundColor="gray" color="black"> IN </Text>
+          <Text> Trade Log</Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text backgroundColor="gray" color="black"> OUT </Text>
+          <Text color="red"> ✗ Error: {result.error}</Text>
+        </Box>
+      </Box>
+    )
+  }
+
+  // Success state - render based on data type
+  const isSingleLog = result.data && !Array.isArray(result.data)
+  const isLogList = result.data && Array.isArray(result.data)
+
+  if (isSingleLog) {
+    const log = result.data as TradeLog
+    return (
+      <Box flexDirection="column" paddingLeft={2}>
+        <Box>
+          <Text backgroundColor="gray" color="black"> IN </Text>
+          <Text> Trade Log</Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text backgroundColor="gray" color="black"> OUT </Text>
+          <Text color="green"> ✓ Success</Text>
+        </Box>
+        <Box paddingLeft={5} marginTop={1} flexDirection="column">
+          <Text color="cyan">Log ID: {log.log_id}</Text>
+          <Text color="gray">Symbol: {log.symbol} | Name: {log.name}</Text>
+          <Text color="gray">Entry: ¥{log.entry_price} on {log.entry_date}</Text>
+          {log.notes && <Text color="gray">Notes: {log.notes}</Text>}
+          <Text color="gray" dimColor>Created: {log.created_at}</Text>
+
+          {log.records.length > 0 && (
+            <Box marginTop={1} flexDirection="column">
+              <Text color="yellow">Records ({log.records.length}):</Text>
+              {log.records.slice(0, 5).map((record, i) => (
+                <Box key={i} paddingLeft={2}>
+                  <Text color="gray">
+                    {record.date} | {record.event}
+                    {record.price ? ` | ¥${record.price}` : ''}
+                    {record.notes ? ` | ${record.notes}` : ''}
+                  </Text>
+                </Box>
+              ))}
+              {log.records.length > 5 && (
+                <Box paddingLeft={2}>
+                  <Text color="gray" dimColor>
+                    ... and {log.records.length - 5} more records
+                  </Text>
+                </Box>
+              )}
+            </Box>
+          )}
+        </Box>
+      </Box>
+    )
+  }
+
+  if (isLogList) {
+    const logs = result.data as TradeLog[]
+    return (
+      <Box flexDirection="column" paddingLeft={2}>
+        <Box>
+          <Text backgroundColor="gray" color="black"> IN </Text>
+          <Text> Trade Log</Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text backgroundColor="gray" color="black"> OUT </Text>
+          <Text color="green"> ✓ Found {logs.length} trade log{logs.length !== 1 ? 's' : ''}</Text>
+        </Box>
+        {logs.length > 0 && (
+          <Box paddingLeft={5} marginTop={1} flexDirection="column">
+            {logs.map((log, i) => (
+              <Box key={i} marginTop={i > 0 ? 1 : 0}>
+                <Text color="cyan">{log.log_id}</Text>
+                <Text color="gray"> | {log.symbol} ({log.name})</Text>
+                <Text color="gray"> | Entry: ¥{log.entry_price}</Text>
+                <Text color="gray"> | {log.records.length} record{log.records.length !== 1 ? 's' : ''}</Text>
+              </Box>
+            ))}
+          </Box>
+        )}
+      </Box>
+    )
+  }
+
+  // Fallback for unexpected data structure
+  return (
+    <Box flexDirection="column" paddingLeft={2}>
+      <Box>
+        <Text backgroundColor="gray" color="black"> IN </Text>
+        <Text> Trade Log</Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text backgroundColor="gray" color="black"> OUT </Text>
+        <Text color="green"> ✓ Success</Text>
+      </Box>
+    </Box>
+  )
+}
+
 // ── Tool Definition ─────────────────────────────────────────────────────────
 
 export const TradeLogTool = buildTool({
@@ -339,6 +455,27 @@ export const TradeLogTool = buildTool({
   isReadOnly: () => false,
   checkPermissions: checkPermission,
   call: execute,
+  mapToolResultToToolResultBlockParam(output, toolUseId) {
+    if (!output.success) {
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: `Trade log operation failed: ${output.error}`,
+        is_error: true,
+      }
+    }
+
+    // Format success output
+    const formatted = JSON.stringify(output.data, null, 2)
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseId,
+      content: `Trade log operation successful:\n\n${formatted}`,
+    }
+  },
+  renderToolResultMessage(output, options) {
+    return renderToolResultMessage(output, { verbose: options.verbose })
+  },
 })
 
 export { handleCreate, handleAppend, handleGet, handleList }
