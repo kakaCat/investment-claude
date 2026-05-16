@@ -237,9 +237,9 @@ describe('EvolutionRunTool', () => {
 
       expect(result.type).toBe('tool_result')
       expect(result.tool_use_id).toBe('test-tool-use-id')
-      expect(result.content).toContain('Evolution Analysis Report')
-      expect(result.content).toContain('Total Return: 15.50%')
-      expect(result.content).toContain('Performance Gap: 4.50%')
+      expect(result.content).toContain('进化分析完成')
+      expect(result.content).toContain('15.50%')
+      expect(result.content).toContain('4.50%')
       expect(result.content).toContain('Improve stock selection criteria')
       expect(result).not.toHaveProperty('is_error')
     })
@@ -252,7 +252,7 @@ describe('EvolutionRunTool', () => {
 
       expect(result.type).toBe('tool_result')
       expect(result.tool_use_id).toBe('test-tool-use-id')
-      expect(result.content).toContain('Evolution analysis failed')
+      expect(result.content).toContain('进化分析失败')
       expect(result.content).toContain('Test error')
       expect(result.is_error).toBe(true)
     })
@@ -268,7 +268,7 @@ describe('EvolutionRunTool', () => {
         'test-tool-use-id'
       )
 
-      expect(result.content).toContain('Actions Taken:')
+      expect(result.content).toContain('已执行操作')
       expect(result.content).toContain('Saved 3 recommendations to pending actions')
     })
 
