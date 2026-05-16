@@ -1,7 +1,7 @@
 // CLI 入口 — 对标 Claude Code src/entrypoints/cli.tsx
 // 解析参数 → render Ink App → 启动 REPL
 
-import { readFileSync } from 'fs'
+import { readFileSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import React from 'react'
 import { render } from 'ink'
@@ -31,8 +31,45 @@ function loadEnv() {
   }
 }
 
+function checkRestartContext(): void {
+  const RESTART_DIR = join(process.cwd(), '.restart')
+  const CONTEXT_FILE = join(RESTART_DIR, 'context.json')
+
+  if (process.env.PI_RESTARTED === 'true' && existsSync(CONTEXT_FILE)) {
+    try {
+      const data = JSON.parse(readFileSync(CONTEXT_FILE, 'utf-8'))
+      const ts = new Date(data.timestamp).getTime()
+      const elapsed = !isNaN(ts) ? Math.round((Date.now() - ts) / 1000) : 0
+
+      console.log(`🔄 检测到 Agent 重启（${elapsed > 0 ? `${elapsed} 秒前` : '时间未知'}）`)
+      console.log(`   - 原因: ${data.reason || '未指定'}`)
+      console.log(`   - 新工具已加载\n`)
+
+      try {
+        unlinkSync(CONTEXT_FILE)
+      } catch {
+        // ignore
+      }
+    } catch {
+      console.log('🔄 检测到 Agent 重启（新工具已加载）\n')
+      try {
+        unlinkSync(CONTEXT_FILE)
+      } catch {
+        // ignore
+      }
+    }
+  } else if (existsSync(CONTEXT_FILE)) {
+    try {
+      unlinkSync(CONTEXT_FILE)
+    } catch {
+      // ignore
+    }
+  }
+}
+
 async function main() {
   loadEnv()
+  checkRestartContext()
 
   logForDebugging(`pi started pid=${process.pid}`)
   logForDiagnosticsNoPII('info', 'cli_entry', { pid: process.pid })
