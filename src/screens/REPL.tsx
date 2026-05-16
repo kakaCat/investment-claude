@@ -821,8 +821,7 @@ export function REPL(_props: Props) {
         !!verifyRequest ||
         !!permissionRequest ||
         collectingPlanReason ||
-        collectingVerifyReason ||
-        isLoading
+        collectingVerifyReason
     },
   )
 
